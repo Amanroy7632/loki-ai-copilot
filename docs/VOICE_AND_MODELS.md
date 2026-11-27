@@ -27,12 +27,19 @@ state or `InvalidTransition`; rejected events leave the state unchanged.
 | Transcribing | Transcribed | Thinking |
 | Thinking | ResponseReady | Speaking |
 | Speaking | SpeechDone | Idle |
+| Transcribing / Thinking / Speaking | Failed (step ended with an error or an empty transcript; its work is finished) | Idle |
 | Listening / Recording / Transcribing / Thinking / Speaking | Cancel / DeviceLost | Cancelled |
 | Cancelled | CleanupComplete | Idle |
-| Any | Mute | Muted |
-| Muted | Unmute (explicit user control only) | Idle |
+| Idle | Mute | Muted { cleanup_pending: false } |
+| Listening / Recording / Transcribing / Thinking / Speaking / Cancelled | Mute | Muted { cleanup_pending: true } |
+| Muted { cleanup_pending: true } | CleanupComplete | Muted { cleanup_pending: false } |
+| Muted { cleanup_pending: false } | Unmute (explicit user control only) | Idle |
+| Muted { cleanup_pending: true } | Unmute (explicit user control only) | Cancelled (still waits for CleanupComplete) |
 
-Repeated `Mute` is harmless. `Cancel` and `DeviceLost` leave `Idle` or `Cancelled` unchanged.
+Repeated `Mute` is harmless and keeps any pending cleanup. Muting during active work keeps the
+same barrier as cancelling: no new session can start until the driver sends `CleanupComplete`,
+even if the user unmutes first (review fix, 2026-11-27). `Failed` is only for steps whose work has
+already ended; capture failures use `DeviceLost` or `Cancel`, because an open stream needs cleanup. `Cancel` and `DeviceLost` leave `Idle` or `Cancelled` unchanged.
 All other combinations are rejected, including completion events received while muted and
 push-to-talk while speaking. `requires_capture()` is true only for `Listening` and `Recording`;
 it describes desired capture and indicator state, not actual OS device ownership.
@@ -44,8 +51,9 @@ serialize events, discard completions from old sessions, cancel/join all work on
 release the device before allowing a fresh session. Unmute returns to idle without rearming
 listening. Transcribed text is user input, never a source of control events or action approvals.
 
-The transition table is tested across all 8 states × 12 events, with additional sequence tests
-for push-to-talk, silence, cancellation, device loss, mute, and capture exclusion during speech.
+The transition table is tested across all 9 states × 13 events (both muted variants), with
+sequence tests for push-to-talk, silence, cancellation, device loss, mute with and without pending
+cleanup, failures, and capture exclusion during speech.
 Hardware capture, STT, TTS and SEC-11 integration remain later P4 tickets.
 
 ## Audio pipeline

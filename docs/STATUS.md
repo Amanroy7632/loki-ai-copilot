@@ -6,26 +6,10 @@
 
 ## Current position
 
-**Parallel P4 worktree:** On 2026-11-27 the owner explicitly requested starting Phase 4 without
-disturbing Phase 3. Branch `p4/t01-voice-state-machine`, worktree `../loki-p4-voice`, starts from
-committed baseline `b0e8682`; the uncommitted P3 work in `../loki` is not included or changed.
-This overrides the normal phase-order rule for this independent ticket, without passing any
-earlier gates. The mainline status below is inherited from that baseline (including stale Git
-blockers); it is not a current report on the separate P3 checkout.
-
-### P4 branch progress
-
-- [x] P4-T01 Voice state machine: pure lifecycle, typed events, exhaustive transition table
-  (96 state/event pairs), mute invariant and sequence tests. `cargo test -p loki-voice --locked`
-  → 6 passed, 0 failed. Full repository checks passed (168 tests), plus TypeScript checking.
-- [ ] P4-T02 Audio capture: next ticket; CPAL/rubato version and license review, synthetic
-  source tests, and a manual reference-OS capture are required.
-- [ ] P4-T03..T09: not started; the P4 gate remains open.
-
 | | |
 | --- | --- |
-| **Current phase** | P2: Local chat ([phase file](phases/P02-local-chat.md)), started on the owner's instruction while the P0 and P1 gates are still open (2026-11-27). |
-| **Next ticket** | **P2 gate**: the offline test (needs the owner to turn networking off), `docs/benchmarks/p2-inference.md`, and the P2-T05 real pull-with-cancel demo. CI verification for P1-T01/T03/T09 is still blocked (no git or remote). |
+| **Current phase** | P4: Voice ([phase file](phases/P04-voice.md)). Owner authorized parallel P4 development and then integration of P4-T01 into the main checkout after P3 implementation (2026-11-27). Earlier phase gates remain open. |
+| **Next ticket** | **P4-T02 Audio capture**. P3 is code complete (238 tests and native smoke test recorded) but still needs SEC tests passing in CI. Open owner items: the P2 offline test, D-05, D-07. |
 | **Last gate passed** | none |
 | **Reference OS** | **macOS** (Apple Silicon first), ADR-0003 |
 
@@ -36,7 +20,9 @@ blockers); it is not a current report on the separate P3 checkout.
 | P0 Feasibility | in progress (resumed by the owner after P1 was written). P0-T01 done; the spikes, ADR-0003 and the full license review are not. |
 | P1 Foundation | code complete; **all checks pass locally on macOS**; CI not yet run anywhere. Gate not passed. |
 | P2 Local chat | code complete; all checks pass locally (161 tests); manual chat against real Ollama recorded. Gate not passed (see Next ticket). |
-| P3–P11 | not started |
+| P3 Tools and policy | code complete; all checks pass locally (238 tests); native macOS smoke test passed (real model, approved app launch). Gate not passed: SEC tests not yet run in CI. |
+| P4 Voice | P4-T01 state machine implemented and copied from isolated branch into main; combined checks pass (244 tests). Gate not passed. |
+| P5–P11 | not started |
 
 ## P0 tickets
 
@@ -72,34 +58,62 @@ blockers); it is not a current report on the separate P3 checkout.
 - [x] P2-T06 Network policy (`loki-runtime::net`): loopback IP literals only for local services, loopback-only redirects (SEC-07 test), no proxy, and a test that no other crate builds an HTTP client
 - [x] P2-T07 CLI: `--provider ollama|mock`, `--model`, `/stop`, `/retry`, `/model`, health at startup; manual session recorded in the progress log
 
+## P3 tickets
+
+- [x] P3-T01 Tool trait and registry: name rule, duplicate check, strict-schema check (closed objects, bounded strings/arrays/numbers, no `$ref`), `jsonschema` validation (no remote resolution)
+- [x] P3-T02 Policy engine: pure fail-closed `evaluate()`; table test over all 200 Risk × status × grant × mode combinations, with exactly 6 allowed and all listed
+- [x] P3-T03 Approvals: `args_hash` = sha256 of canonical `{tool, arguments}` (checked against `shasum` vectors); single use through a conditional `UPDATE … RETURNING`; preview shows tool, risk and every argument
+- [x] P3-T04 Executor, tasks and audit: `Tool::execute` requires `loki_policy::Allowed` (private, not `Clone`, bound to request + hash; ADR-0011, owner-approved crate edge); semaphore, deadline, cancel, 64 KiB cap; legal transitions only; startup marks unfinished tasks `interrupted`
+- [x] P3-T05 Agent tool loop: validate → policy → `[y/N]` approval (default no; only a line typed after the prompt counts) → execute → audit; results wrapped `<tool_result untrusted="true">`; 6 calls per turn (config), then the model is told
+- [x] P3-T06 `time.now` (jiff, IANA zones) and `system.info` (no host/user); manual run recorded in `docs/checklists/p3-native-smoke.md`
+- [x] P3-T07 Platform trait, `MockPlatform`, macOS adapter (bundle discovery, `open -b`, process-verified launch), `app.list` + `app.open`; native smoke test passed
+- [x] P3-T08 `files.search`/`files.read`: canonical roots, opaque file IDs, re-resolution on every read, no symlink following, hidden/system files skipped, text types only, 256 KiB cap
+- [x] P3-T09 `loki audit list [--tool] [--since]` / `audit show`; test proves no file contents in output, DB, WAL or logs
+- [x] P3-T10 `tests/security` (crate `loki-security-tests`): SEC-01..06 and SEC-10, named by ID. *Run locally; CI not yet.*
+
+P3 gate: [x] an allowed tool works end to end from the CLI; [x] denied, malformed, unknown, replayed and path-escaping requests can't execute (SEC tests pass locally); [x] every execution has an audit row, and startup recovery never replays; [x] warm dispatch overhead measured: p95 0.76 ms release / 1.0 ms debug, target < 250 ms (`docs/benchmarks/p3-dispatch.md`); [ ] SEC tests passing **in CI**.
+
+## P4 tickets
+
+- [x] P4-T01 Voice state machine: pure lifecycle with typed events; 117 state/event combinations
+  (9 states incl. both muted variants × 13 events) tested, plus mute, cancellation, device loss,
+  failure, silence and speaking sequences. Review fix (2026-11-27): mute now keeps the cleanup
+  barrier (`Muted { cleanup_pending }`) and a `Failed` event covers STT, agent and TTS errors.
+  Ten voice tests. Source commit `7861b7b`; see `docs/handoffs/p4-t01.md`.
+- [ ] P4-T02 Audio capture: CPAL, bounded buffering, mono conversion and resampling; synthetic
+  tests and manual reference-OS capture required.
+- [ ] P4-T03..T09: not started. No capture, STT, TTS or CLI voice integration yet.
+
+The owner explicitly authorized starting P4 before earlier gates passed, overriding the normal
+phase-order rule. P3 implementation and its recorded validation remain intact.
+
 ## Open decisions
 
 | ID | Decision needed | Needed by | Notes |
 | --- | --- | --- | --- |
-| D-01 | **Reference OS**: the blueprint says macOS; the P1 work ran on macOS (Apple M2, 8 GB) | P0-T02 | Draft ADR-0003 lists the options. ADR-0003 says the setup machine was Windows 10; that no longer seems true |
+| ~~D-01~~ | ~~Reference OS~~ | | **Decided:** macOS, ADR-0003 |
 | ~~D-02~~ | ~~How TS contracts are generated~~ | | **Decided:** ts-rs, ADR-0005 |
 | ~~D-03~~ | ~~Migration library~~ | | **Decided:** hand-rolled `user_version` runner, ADR-0007 |
 | D-04 | VAD engine and wake-word engine (licenses matter) | P4-T03 / P4-T08 | |
 | D-05 | Project license | before any public release | No `license` field set yet |
 | D-06 | Web search provider (self-hosted SearXNG, an API with a key, ...) | P7-T01 | The key is kept in the OS secret store |
-| D-07 | **Accept MPL-2.0 `option-ext`** (pulled in by `directories`)? | before any release | Allowed by a crate-scoped exception in `deny.toml` for now. If rejected: replace `directories` (hand-rolled paths, or Tauri path APIs from P5) and delete the exception. See `docs/p0/licenses.md` |
+| D-07 | **Accept MPL-2.0 `option-ext`** (pulled in by `directories`) **and MIT-0 `borrow-or-share`** (pulled in by `jsonschema`)? | before any release | Allowed by a crate-scoped exception in `deny.toml` for now. If rejected: replace `directories` (hand-rolled paths, or Tauri path APIs from P5) and delete the exception. See `docs/p0/licenses.md` |
 
 ## Blockers
 
-- **The git repository is broken**: `.git/` has `HEAD` and `config` but no `objects/` or `refs/`
-  (looks like empty directories were lost in a copy), so every `git` command fails with "not a
-  git repository". Nothing has ever been committed. Repairing it with `git init` (safe: there is
-  no history) was **declined by the owner on 2026-11-27**, so P1 work is **uncommitted** and the
-  per-ticket commits AGENTS.md asks for were not made. Owner: repair or re-clone, then commit.
-- **No GitHub remote / CI run**: P1-T01, P1-T03 and P1-T09 acceptance require CI results. Needs a
-  pushed repository.
+- **CI evidence still outstanding**: P1-T01, P1-T03, P1-T09 and P3-T10 need CI results. Git is
+  working, has two commits on main, and has an `origin` remote configured; the older broken-Git
+  report is stale. P3 and the copied P4 changes are currently uncommitted in the main checkout.
+  CI results for this combined code have not been verified.
 
 ## Progress log
 
 Newest first. Format: `YYYY-MM-DD | ticket | what changed | commands run → result`.
 
-- 2026-11-27 | P4-T01 (isolated branch) | Added pure voice lifecycle, typed events, 96-pair transition matrix and mute/cancel/device-loss sequence tests. Owner authorized parallel P4 start without changing P3. | `cargo test -p loki-voice --locked` → 6 passed; `./scripts/check.sh` → passed outside sandbox (168 workspace tests, fmt, clippy, generated contracts, cargo deny); sandbox attempt could not bind mock-server ports. `tsc --noEmit -p packages/contracts/tsconfig.json` using the existing compiler in `../loki` → passed. See `docs/handoffs/p4-t01.md`.
+- 2026-11-27 | P4-T01 review | Reviewed the P4-T01 state machine. Fixed: muting during active work skipped the cancel path's cleanup barrier, so after Unmute a new session (second mic stream) could start before the old work was released. Now `Muted { cleanup_pending: true }`; `CleanupComplete` clears it; Unmute while pending goes to `Cancelled`. Added `Failed` (Transcribing/Thinking/Speaking → Idle) so errors aren't reported as user cancels. Not changed: text-only replies still pass through Speaking (decide in P4-T06); no serde on VoiceState yet (needed in P5). | `cargo test -p loki-voice` → 10 passed; clippy clean; full `./scripts/check.sh` → all passed, 248 tests.
+- 2026-11-27 | P4-T01 integration | Copied the isolated voice state machine from `7861b7b` into main on owner request; reconciled status with completed P3. File-hash comparison confirmed P3 implementation unchanged; existing staging state preserved. | `./scripts/check.sh` outside sandbox → all passed, 244 tests, fmt/clippy, generated contracts, strict TypeScript and cargo deny. P4-T02 is next; no audio capture or CLI voice wiring yet.
 
+- 2026-11-27 | P3-T01..T10 | Tools, policy, approvals, executor, audit, macOS adapter, file tools, CLI (`permissions`, `roots`, `apps`, `audit`, approval prompt), `tests/security`. Owner decisions: reference OS **macOS** (ADR-0003), crate edge tools → policy (ADR-0011). Migration 0003; config v3 (`tools` limits). New deps checked: jsonschema (MIT, no default features), sha2, jiff, plist; MIT-0 `borrow-or-share` given a crate-scoped exception (D-07). Fixed a P2 REPL bug: a closed stdin made the reply loop spin. | `./scripts/check.sh` → all passed, 238 tests, cargo deny ok after the exception. Manual (real bonsai-2:4b, real macOS): model called `time.now` → correct Tokyo time; "Open the Calculator app" → `app.list`, approval prompt, `y` → Calculator launched and verified (206 ms); audit rows for all three. Dispatch overhead p95 0.76 ms.
 - 2026-11-27 | P2-T01..T07 | Ollama adapter, cancellation with partial save (migration 0002 + pre-migration backup), context budget, orchestrator, model onboarding, network policy, CLI. Config v2 (Ollama URL, context sizes; v1→v2 migration keeps the provider). New installs default to `ollama`. **Default model changed to bonsai-2:4b (ADR-0010, supersedes ADR-0009)**: qwen3:4b leaked its reasoning into replies with `think: false`; thinking is now per model. | `./scripts/check.sh` → all passed, 161 tests, cargo deny ok. Manual: `loki models recommend` → bonsai-2:4b; `loki models use bonsai-2:4b`; `loki chat` → clean one-sentence answers (bonsai about 2 s), `/model qwen3:4b` switched mid-session with clean output; `history show` correct; 0 rows contain `</think>`.
 - 2026-11-27 | P0-T03 | Rust spike `spikes/ollama` (reqwest, no proxy) against Ollama 0.40.18 with `OLLAMA_NO_CLOUD=1`. Models qwen3:4b and bonsai-2:4b (both Apache-2.0, verified with `ollama show --license`). Default model qwen3:4b (ADR-0009); allowlist `fixtures/models.json`. A first Python version was stopped on owner request (spikes are Rust). | `ollama-spike qwen3:4b` → 30 tok/s, 0.08 s warm first token, 3.2 GB, tools 20/20, false positives 0/10; `ollama-spike bonsai-2:4b` → 21 tok/s, 1.9 GB, tools 20/20; server log shows `stop: cancel task` on client disconnect.
 - 2026-11-27 | P0-T01 | Installed Ollama 0.40.18 (`brew install ollama`; no service registered, not running). Checked the Tauri 2 macOS prerequisites against the official docs: all present (Xcode 26.6, CLT, Rust 1.97.1, Node 24 LTS). `docs/p0/environment.md` completed. | `cargo fmt --check` → ok; `cargo clippy --workspace --all-targets -- -D warnings` → 0 warnings; `cargo test --workspace` → 98 passed, 0 failed.

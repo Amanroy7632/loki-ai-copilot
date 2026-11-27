@@ -22,7 +22,13 @@ pub enum VoiceState {
     /// Work is cancelled; wait for resource cleanup before accepting another session.
     Cancelled,
     /// Capture is forbidden until the user explicitly unmutes.
-    Muted,
+    Muted {
+        /// `true` when the session was muted while work was still running (or being cancelled).
+        /// The driver must send `CleanupComplete` once that work is joined and the device is
+        /// released. Until then, even an unmute can't lead to a new session: it goes to
+        /// `Cancelled`, which waits for the same cleanup. This gives mute the same barrier as cancel.
+        cleanup_pending: bool,
+    },
 }
 
 impl VoiceState {
@@ -32,25 +38,65 @@ impl VoiceState {
         matches!(self, Self::Listening | Self::Recording)
     }
 
+    /// `true` in either muted state.
+    pub const fn is_muted(self) -> bool {
+        matches!(self, Self::Muted { .. })
+    }
+
+    /// States with work in flight that a cancel, mute or device loss must clean up.
+    const fn has_active_work(self) -> bool {
+        matches!(
+            self,
+            Self::Listening
+                | Self::Recording
+                | Self::Transcribing
+                | Self::Thinking
+                | Self::Speaking
+        )
+    }
+
     fn next(self, event: VoiceEvent) -> Option<Self> {
         use VoiceEvent as E;
         use VoiceState as S;
 
+        let muted = |cleanup_pending| S::Muted { cleanup_pending };
         match (self, event) {
-            (_, E::Mute) => Some(S::Muted),
-            (S::Muted, E::Unmute) => Some(S::Idle),
+            // Mute: always accepted. It keeps the cleanup obligation of whatever was running.
+            (S::Muted { cleanup_pending }, E::Mute) => Some(muted(cleanup_pending)),
+            (S::Idle, E::Mute) => Some(muted(false)),
+            (state, E::Mute) if state.has_active_work() || state == S::Cancelled => {
+                Some(muted(true))
+            }
+            // Leaving Muted only by Unmute; with cleanup still pending, via Cancelled.
+            (
+                S::Muted {
+                    cleanup_pending: false,
+                },
+                E::Unmute,
+            ) => Some(S::Idle),
+            (
+                S::Muted {
+                    cleanup_pending: true,
+                },
+                E::Unmute,
+            ) => Some(S::Cancelled),
+            (
+                S::Muted {
+                    cleanup_pending: true,
+                },
+                E::CleanupComplete,
+            ) => Some(muted(false)),
             // No completion, cancellation or device event can unmute the session.
-            (S::Muted, _) => None,
+            (S::Muted { .. }, _) => None,
             (S::Idle, E::StartListening) => Some(S::Listening),
             (S::Idle | S::Listening, E::PressTalk) => Some(S::Recording),
             (S::Recording, E::ReleaseTalk | E::SilenceTimeout) => Some(S::Transcribing),
             (S::Transcribing, E::Transcribed) => Some(S::Thinking),
             (S::Thinking, E::ResponseReady) => Some(S::Speaking),
             (S::Speaking, E::SpeechDone) => Some(S::Idle),
-            (
-                S::Listening | S::Recording | S::Transcribing | S::Thinking | S::Speaking,
-                E::Cancel | E::DeviceLost,
-            ) => Some(S::Cancelled),
+            // A step that finished with an error (or an empty transcript) has no work left.
+            (S::Transcribing | S::Thinking | S::Speaking, E::Failed) => Some(S::Idle),
+            (state, E::Cancel | E::DeviceLost) if state.has_active_work() => Some(S::Cancelled),
             (S::Idle, E::Cancel | E::DeviceLost) => Some(S::Idle),
             (S::Cancelled, E::Cancel | E::DeviceLost) => Some(S::Cancelled),
             (S::Cancelled, E::CleanupComplete) => Some(S::Idle),
@@ -88,6 +134,11 @@ pub enum VoiceEvent {
     DeviceLost,
     /// The driver has joined cancelled work and released its resources.
     CleanupComplete,
+    /// Recognition, the agent turn or speech output ended with an error, or recognition heard
+    /// nothing. Send it only once that step's work has fully finished: there is nothing left to
+    /// clean up, so the session returns straight to `Idle`. Capture failures use `DeviceLost`
+    /// or `Cancel` instead, because an open input stream does need cleanup.
+    Failed,
 }
 
 /// An event that is out of order. The machine keeps its previous state.
@@ -113,9 +164,10 @@ impl std::error::Error for InvalidTransition {}
 
 /// One session's pure state machine. Constructed idle; it owns no device or audio buffer.
 ///
-/// A future driver must serialize events, discard completions from cancelled sessions, and
-/// cancel/join work on mute before permitting a fresh session. State alone does not release
-/// devices or cancel futures. There is deliberately no action-approval API here.
+/// A future driver must serialize events and discard completions from cancelled sessions. It
+/// must send `CleanupComplete` only after cancelled or muted work is joined and the device is
+/// released; the machine refuses a new session until then, after a cancel or a mute alike.
+/// There is deliberately no action-approval API here.
 #[derive(Debug, Default)]
 pub struct VoiceMachine {
     state: VoiceState,
@@ -149,7 +201,14 @@ mod tests {
     use VoiceEvent as E;
     use VoiceState as S;
 
-    const EVENTS: [VoiceEvent; 12] = [
+    const MUTED: VoiceState = S::Muted {
+        cleanup_pending: false,
+    };
+    const MUTED_CLEANING: VoiceState = S::Muted {
+        cleanup_pending: true,
+    };
+
+    const EVENTS: [VoiceEvent; 13] = [
         E::StartListening,
         E::PressTalk,
         E::ReleaseTalk,
@@ -162,8 +221,9 @@ mod tests {
         E::Unmute,
         E::DeviceLost,
         E::CleanupComplete,
+        E::Failed,
     ];
-    const STATES: [VoiceState; 8] = [
+    const STATES: [VoiceState; 9] = [
         S::Idle,
         S::Listening,
         S::Recording,
@@ -171,126 +231,38 @@ mod tests {
         S::Thinking,
         S::Speaking,
         S::Cancelled,
-        S::Muted,
+        MUTED,
+        MUTED_CLEANING,
+    ];
+    const ACTIVE: [VoiceState; 5] = [
+        S::Listening,
+        S::Recording,
+        S::Transcribing,
+        S::Thinking,
+        S::Speaking,
     ];
 
     #[test]
     fn every_state_event_pair_matches_the_transition_table() {
         // Independent expected table: columns follow EVENTS, rows follow STATES.
         // None means rejection without mutation, including late completion events.
-        let expected = [
-            [
-                Some(S::Listening),
-                Some(S::Recording),
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(S::Idle),
-                Some(S::Muted),
-                None,
-                Some(S::Idle),
-                None,
-            ],
-            [
-                None,
-                Some(S::Recording),
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(S::Cancelled),
-                Some(S::Muted),
-                None,
-                Some(S::Cancelled),
-                None,
-            ],
-            [
-                None,
-                None,
-                Some(S::Transcribing),
-                Some(S::Transcribing),
-                None,
-                None,
-                None,
-                Some(S::Cancelled),
-                Some(S::Muted),
-                None,
-                Some(S::Cancelled),
-                None,
-            ],
-            [
-                None,
-                None,
-                None,
-                None,
-                Some(S::Thinking),
-                None,
-                None,
-                Some(S::Cancelled),
-                Some(S::Muted),
-                None,
-                Some(S::Cancelled),
-                None,
-            ],
-            [
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(S::Speaking),
-                None,
-                Some(S::Cancelled),
-                Some(S::Muted),
-                None,
-                Some(S::Cancelled),
-                None,
-            ],
-            [
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(S::Idle),
-                Some(S::Cancelled),
-                Some(S::Muted),
-                None,
-                Some(S::Cancelled),
-                None,
-            ],
-            [
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(S::Cancelled),
-                Some(S::Muted),
-                None,
-                Some(S::Cancelled),
-                Some(S::Idle),
-            ],
-            [
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(S::Muted),
-                Some(S::Idle),
-                None,
-                None,
-            ],
+        const N: Option<VoiceState> = None;
+        let c = Some(S::Cancelled);
+        let m = Some(MUTED);
+        let mc = Some(MUTED_CLEANING);
+        let idle = Some(S::Idle);
+        #[rustfmt::skip]
+        let expected: [[Option<VoiceState>; 13]; 9] = [
+            //            Listen               PressTalk          Release              Silence              Transcribed       ResponseReady    SpeechDone Cancel Mute Unmute DevLost Cleanup Failed
+            /* Idle */   [Some(S::Listening), Some(S::Recording), N,                   N,                   N,                N,                N,         idle,  m,   N,     idle,   N,      N],
+            /* Listen */ [N,                  Some(S::Recording), N,                   N,                   N,                N,                N,         c,     mc,  N,     c,      N,      N],
+            /* Record */ [N,                  N,                  Some(S::Transcribing), Some(S::Transcribing), N,            N,                N,         c,     mc,  N,     c,      N,      N],
+            /* Transc */ [N,                  N,                  N,                   N,                   Some(S::Thinking), N,               N,         c,     mc,  N,     c,      N,      idle],
+            /* Think  */ [N,                  N,                  N,                   N,                   N,                Some(S::Speaking), N,        c,     mc,  N,     c,      N,      idle],
+            /* Speak  */ [N,                  N,                  N,                   N,                   N,                N,                idle,      c,     mc,  N,     c,      N,      idle],
+            /* Cancel */ [N,                  N,                  N,                   N,                   N,                N,                N,         c,     mc,  N,     c,      idle,   N],
+            /* Muted  */ [N,                  N,                  N,                   N,                   N,                N,                N,         N,     m,   idle,  N,      N,      N],
+            /* MutedC */ [N,                  N,                  N,                   N,                   N,                N,                N,         N,     mc,  c,     N,      m,      N],
         ];
         for (state, row) in STATES.into_iter().zip(expected) {
             for (event, next) in EVENTS.into_iter().zip(row) {
@@ -336,26 +308,58 @@ mod tests {
     fn only_explicit_unmute_can_leave_muted_from_every_starting_state() {
         for state in STATES {
             let mut machine = VoiceMachine { state };
-            assert_eq!(machine.apply(E::Mute), Ok(S::Muted));
+            assert!(machine.apply(E::Mute).unwrap().is_muted());
             for event in EVENTS.into_iter().filter(|event| *event != E::Unmute) {
                 let _ = machine.apply(event);
-                assert_eq!(machine.state(), S::Muted, "{state:?} + {event:?}");
+                assert!(machine.state().is_muted(), "{state:?} + {event:?}");
                 assert!(!machine.state().requires_capture());
             }
+            // Every non-Unmute event has run, including CleanupComplete, so nothing is pending.
+            assert_eq!(machine.state(), MUTED);
             assert_eq!(machine.apply(E::Unmute), Ok(S::Idle));
             assert!(!machine.state().requires_capture());
         }
     }
 
     #[test]
+    fn muting_active_work_keeps_the_cleanup_barrier() {
+        for state in ACTIVE.into_iter().chain([S::Cancelled]) {
+            let mut machine = VoiceMachine { state };
+            assert_eq!(machine.apply(E::Mute), Ok(MUTED_CLEANING), "{state:?}");
+            // Unmute before cleanup: no new session yet, only the cancel barrier.
+            assert_eq!(machine.apply(E::Unmute), Ok(S::Cancelled));
+            assert!(
+                machine.apply(E::PressTalk).is_err(),
+                "{state:?}: talk before cleanup"
+            );
+            assert!(machine.apply(E::StartListening).is_err());
+            assert_eq!(machine.apply(E::CleanupComplete), Ok(S::Idle));
+            assert_eq!(machine.apply(E::PressTalk), Ok(S::Recording));
+        }
+    }
+
+    #[test]
+    fn cleanup_while_muted_stays_muted_until_unmute() {
+        let mut machine = VoiceMachine {
+            state: S::Recording,
+        };
+        assert_eq!(machine.apply(E::Mute), Ok(MUTED_CLEANING));
+        assert_eq!(machine.apply(E::CleanupComplete), Ok(MUTED));
+        assert!(machine.apply(E::CleanupComplete).is_err());
+        assert!(machine.apply(E::PressTalk).is_err());
+        assert_eq!(machine.apply(E::Unmute), Ok(S::Idle));
+    }
+
+    #[test]
+    fn muting_when_idle_needs_no_cleanup() {
+        let mut machine = VoiceMachine::new();
+        assert_eq!(machine.apply(E::Mute), Ok(MUTED));
+        assert_eq!(machine.apply(E::Unmute), Ok(S::Idle));
+    }
+
+    #[test]
     fn cancellation_and_device_loss_require_cleanup_before_restart() {
-        for state in [
-            S::Listening,
-            S::Recording,
-            S::Transcribing,
-            S::Thinking,
-            S::Speaking,
-        ] {
+        for state in ACTIVE {
             for event in [E::Cancel, E::DeviceLost] {
                 let mut machine = VoiceMachine { state };
                 assert_eq!(machine.apply(event), Ok(S::Cancelled));
@@ -364,9 +368,24 @@ mod tests {
                 assert!(machine.apply(E::Transcribed).is_err());
                 assert!(machine.apply(E::ResponseReady).is_err());
                 assert!(machine.apply(E::SpeechDone).is_err());
+                assert!(machine.apply(E::Failed).is_err());
                 assert_eq!(machine.apply(E::CleanupComplete), Ok(S::Idle));
                 assert_eq!(machine.apply(E::PressTalk), Ok(S::Recording));
             }
+        }
+    }
+
+    #[test]
+    fn failures_after_capture_return_to_idle_without_cleanup() {
+        for state in [S::Transcribing, S::Thinking, S::Speaking] {
+            let mut machine = VoiceMachine { state };
+            assert_eq!(machine.apply(E::Failed), Ok(S::Idle), "{state:?}");
+            assert_eq!(machine.apply(E::PressTalk), Ok(S::Recording));
+        }
+        // An open capture stream must be cleaned up, so it can't just "fail" to Idle.
+        for state in [S::Listening, S::Recording] {
+            let mut machine = VoiceMachine { state };
+            assert!(machine.apply(E::Failed).is_err(), "{state:?}");
         }
     }
 
