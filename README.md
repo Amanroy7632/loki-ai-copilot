@@ -3,7 +3,7 @@
 Loki is a local-first, voice-enabled personal copilot. It talks with you, remembers what you allow it to, researches the web when you opt in, and runs **approved** actions on your own devices. By default it needs no cloud account and runs no remote inference.
 
 > **Status:** P3 (tools, policy, approvals, audit) is written and passes all checks locally; the P1–P3 gates still need CI.
-> P0: T01 and T03 done. Nothing is committed yet (the .git folder is broken). See [docs/STATUS.md](docs/STATUS.md).
+> P0: T01–T03 done. P3 and P4-T01 are on branch `p3/tools-policy`. See [docs/STATUS.md](docs/STATUS.md).
 
 ## What Loki is, and is not
 

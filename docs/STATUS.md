@@ -102,9 +102,9 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 ## Blockers
 
 - **CI evidence still outstanding**: P1-T01, P1-T03, P1-T09 and P3-T10 need CI results. Git is
-  working, has two commits on main, and has an `origin` remote configured; the older broken-Git
-  report is stale. P3 and the copied P4 changes are currently uncommitted in the main checkout.
-  CI results for this combined code have not been verified.
+  working with an `origin` remote. P1/P2 are on `main`; P3 and P4-T01 are committed on branch
+  `p3/tools-policy` (not pushed). CI runs once that branch is pushed or merged; until then no CI
+  result exists for this code.
 
 ## Progress log
 
