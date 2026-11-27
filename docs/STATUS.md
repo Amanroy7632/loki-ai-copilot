@@ -6,6 +6,22 @@
 
 ## Current position
 
+**Parallel P4 worktree:** On 2026-11-27 the owner explicitly requested starting Phase 4 without
+disturbing Phase 3. Branch `p4/t01-voice-state-machine`, worktree `../loki-p4-voice`, starts from
+committed baseline `b0e8682`; the uncommitted P3 work in `../loki` is not included or changed.
+This overrides the normal phase-order rule for this independent ticket, without passing any
+earlier gates. The mainline status below is inherited from that baseline (including stale Git
+blockers); it is not a current report on the separate P3 checkout.
+
+### P4 branch progress
+
+- [x] P4-T01 Voice state machine: pure lifecycle, typed events, exhaustive transition table
+  (96 state/event pairs), mute invariant and sequence tests. `cargo test -p loki-voice --locked`
+  → 6 passed, 0 failed. Full repository checks passed (168 tests), plus TypeScript checking.
+- [ ] P4-T02 Audio capture: next ticket; CPAL/rubato version and license review, synthetic
+  source tests, and a manual reference-OS capture are required.
+- [ ] P4-T03..T09: not started; the P4 gate remains open.
+
 | | |
 | --- | --- |
 | **Current phase** | P2: Local chat ([phase file](phases/P02-local-chat.md)), started on the owner's instruction while the P0 and P1 gates are still open (2026-11-27). |
@@ -81,6 +97,8 @@
 ## Progress log
 
 Newest first. Format: `YYYY-MM-DD | ticket | what changed | commands run → result`.
+
+- 2026-11-27 | P4-T01 (isolated branch) | Added pure voice lifecycle, typed events, 96-pair transition matrix and mute/cancel/device-loss sequence tests. Owner authorized parallel P4 start without changing P3. | `cargo test -p loki-voice --locked` → 6 passed; `./scripts/check.sh` → passed outside sandbox (168 workspace tests, fmt, clippy, generated contracts, cargo deny); sandbox attempt could not bind mock-server ports. `tsc --noEmit -p packages/contracts/tsconfig.json` using the existing compiler in `../loki` → passed. See `docs/handoffs/p4-t01.md`.
 
 - 2026-11-27 | P2-T01..T07 | Ollama adapter, cancellation with partial save (migration 0002 + pre-migration backup), context budget, orchestrator, model onboarding, network policy, CLI. Config v2 (Ollama URL, context sizes; v1→v2 migration keeps the provider). New installs default to `ollama`. **Default model changed to bonsai-2:4b (ADR-0010, supersedes ADR-0009)**: qwen3:4b leaked its reasoning into replies with `think: false`; thinking is now per model. | `./scripts/check.sh` → all passed, 161 tests, cargo deny ok. Manual: `loki models recommend` → bonsai-2:4b; `loki models use bonsai-2:4b`; `loki chat` → clean one-sentence answers (bonsai about 2 s), `/model qwen3:4b` switched mid-session with clean output; `history show` correct; 0 rows contain `</think>`.
 - 2026-11-27 | P0-T03 | Rust spike `spikes/ollama` (reqwest, no proxy) against Ollama 0.40.18 with `OLLAMA_NO_CLOUD=1`. Models qwen3:4b and bonsai-2:4b (both Apache-2.0, verified with `ollama show --license`). Default model qwen3:4b (ADR-0009); allowlist `fixtures/models.json`. A first Python version was stopped on owner request (spikes are Rust). | `ollama-spike qwen3:4b` → 30 tok/s, 0.08 s warm first token, 3.2 GB, tools 20/20, false positives 0/10; `ollama-spike bonsai-2:4b` → 21 tok/s, 1.9 GB, tools 20/20; server log shows `stop: cancel task` on client disconnect.

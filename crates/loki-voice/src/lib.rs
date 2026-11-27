@@ -2,8 +2,8 @@
 //!
 //! Audio pipeline: capture, resampling, VAD, speech-to-text, TTS and the voice state machine.
 //!
-//! **Status:** stub. Nothing is implemented yet. Tickets that fill this crate in:
-//! P4-T01..T09.
+//! **Status:** P4-T01 implements the pure state machine. Capture, recognition, speech output
+//! and runtime integration remain for P4-T02..T09; this crate does not open a microphone.
 //!
 //! ## Responsibilities
 //!
@@ -23,3 +23,7 @@
 //! ## Allowed internal dependencies
 //!
 //! `loki-core`. Adding another edge needs an ADR (see `docs/ARCHITECTURE.md`).
+
+mod state;
+
+pub use state::{InvalidTransition, VoiceEvent, VoiceMachine, VoiceState};

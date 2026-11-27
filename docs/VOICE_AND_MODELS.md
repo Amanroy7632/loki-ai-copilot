@@ -13,6 +13,41 @@ Any state ─► Muted ;  Muted ─► Idle only by explicit user action
 - Recognition pauses during `Speaking`, to avoid self-triggering. Echo cancellation and barge-in come later, with an ADR.
 - The listening indicator is visible in every state where the microphone is open.
 
+### Implemented lifecycle (P4-T01)
+
+`loki_voice::{VoiceMachine, VoiceState, VoiceEvent}` implements this diagram without IO or
+additional dependencies. A new machine starts in `Idle`. `apply(event)` returns the resulting
+state or `InvalidTransition`; rejected events leave the state unchanged.
+
+| Current state | Event | Next state |
+| --- | --- | --- |
+| Idle | StartListening (future explicitly enabled wake-word driver only) | Listening |
+| Idle / Listening | PressTalk | Recording |
+| Recording | ReleaseTalk / SilenceTimeout | Transcribing |
+| Transcribing | Transcribed | Thinking |
+| Thinking | ResponseReady | Speaking |
+| Speaking | SpeechDone | Idle |
+| Listening / Recording / Transcribing / Thinking / Speaking | Cancel / DeviceLost | Cancelled |
+| Cancelled | CleanupComplete | Idle |
+| Any | Mute | Muted |
+| Muted | Unmute (explicit user control only) | Idle |
+
+Repeated `Mute` is harmless. `Cancel` and `DeviceLost` leave `Idle` or `Cancelled` unchanged.
+All other combinations are rejected, including completion events received while muted and
+push-to-talk while speaking. `requires_capture()` is true only for `Listening` and `Recording`;
+it describes desired capture and indicator state, not actual OS device ownership.
+
+`StartListening` and `CleanupComplete` make the diagram's listening and cancellation edges
+explicit. Cleanup completion prevents a new session starting before cancelled work is joined.
+Neither event implements audio capture or a wake-word engine. The future runtime driver must
+serialize events, discard completions from old sessions, cancel/join all work on mute, and
+release the device before allowing a fresh session. Unmute returns to idle without rearming
+listening. Transcribed text is user input, never a source of control events or action approvals.
+
+The transition table is tested across all 8 states × 12 events, with additional sequence tests
+for push-to-talk, silence, cancellation, device loss, mute, and capture exclusion during speech.
+Hardware capture, STT, TTS and SEC-11 integration remain later P4 tickets.
+
 ## Audio pipeline
 
 1. Capture mono PCM (CPAL on desktop; AVAudioEngine or AudioRecord via native bridges on mobile).
