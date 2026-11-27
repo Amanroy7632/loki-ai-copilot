@@ -42,7 +42,7 @@ fn migrations_apply_to_an_empty_db() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&db_path(&dir)).unwrap();
     assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 2);
+    assert_eq!(SCHEMA_VERSION, 3);
     let tables = table_names(&db);
     for expected in ["conversations", "messages", "settings"] {
         assert!(
@@ -331,7 +331,7 @@ fn migrations_apply_to_a_db_at_the_previous_version() {
     create_v1_db(&path);
 
     let db = Database::open(&path).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 2);
+    assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
     let messages = db.list_messages(&ConversationId::new("c1")).unwrap();
     assert_eq!(messages.len(), 1);
     assert!(!messages[0].stopped, "existing rows default to not stopped");

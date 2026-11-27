@@ -133,6 +133,19 @@ pub struct ToolResult {
     pub duration_ms: u64,
 }
 
+impl ToolStatus {
+    /// The stable snake_case name (same as serde), used in `tool_runs.status`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::TimedOut => "timed_out",
+            Self::Denied => "denied",
+        }
+    }
+}
+
 impl ToolResult {
     /// A successful, verified result carrying `data`.
     pub fn succeeded(id: RequestId, data: Value, duration_ms: u64) -> Self {

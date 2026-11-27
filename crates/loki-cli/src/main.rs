@@ -7,6 +7,7 @@
 //! `loki models recommend|list|pull <id>|use <id>`. Global: `--data-dir`, `--provider`, `--model`.
 //! All behaviour lives in `loki-runtime`; this crate only parses input and prints output.
 
+mod admin;
 mod models;
 mod repl;
 
@@ -42,6 +43,11 @@ struct Cli {
     #[arg(long, global = true, value_name = "ID")]
     model: Option<String>,
 
+    /// Testing only: with `--provider mock`, play the scripted replies in this JSON file
+    /// (`{"scripts": [{"steps": [...]}, ...]}`) instead of echoing.
+    #[arg(long, global = true, value_name = "FILE", hide = true)]
+    mock_script: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -71,6 +77,26 @@ enum Command {
     Models {
         #[command(subcommand)]
         command: models::ModelsCommand,
+    },
+    /// What tools may do: capabilities, their status, and your grants.
+    Permissions {
+        #[command(subcommand)]
+        command: admin::PermissionsCommand,
+    },
+    /// Folders the file tools may use.
+    Roots {
+        #[command(subcommand)]
+        command: admin::RootsCommand,
+    },
+    /// Apps `app.open` can launch (macOS).
+    Apps {
+        /// Optional name filter.
+        query: Option<String>,
+    },
+    /// The tool audit log (redacted).
+    Audit {
+        #[command(subcommand)]
+        command: admin::AuditCommand,
     },
 }
 
@@ -106,8 +132,21 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         None if chat => None,
         None => Some(ProviderKind::Mock),
     };
+    let mock_scripts = match &cli.mock_script {
+        Some(path) => {
+            let json = std::fs::read_to_string(path)
+                .with_context(|| format!("reading {}", path.display()))?;
+            Some(
+                loki_runtime::MockScript::sequence_from_json(&json)
+                    .context("invalid --mock-script")?,
+            )
+        }
+        None => None,
+    };
     // Opening is blocking (files, SQLite), so it happens before the async runtime starts.
     let mut runtime = Runtime::open(RuntimeOptions {
+        mock_scripts,
+        platform: None,
         data_dir: cli.data_dir,
         provider,
         model: cli.model,
@@ -135,6 +174,10 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 command: HistoryCommand::Show { id },
             } => history_show(&runtime, &ConversationId::new(id)).await,
             Command::Models { command } => models::run(&mut runtime, command).await,
+            Command::Permissions { command } => admin::permissions(&runtime, command).await,
+            Command::Roots { command } => admin::roots(&mut runtime, command),
+            Command::Apps { query } => admin::apps(&runtime, query).await,
+            Command::Audit { command } => admin::audit(&runtime, command).await,
         }
     })
 }

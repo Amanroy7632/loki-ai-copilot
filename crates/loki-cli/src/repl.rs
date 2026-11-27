@@ -10,9 +10,92 @@
 use std::collections::VecDeque;
 use std::io::{BufRead, Write};
 
+use futures::future::BoxFuture;
 use loki_core::ConversationId;
-use loki_runtime::{CancellationToken, ProviderHealth, ReplyOutcome, Runtime};
-use tokio::sync::mpsc;
+use loki_runtime::{
+    CancellationToken, PendingApproval, ProviderHealth, ReplyOutcome, Runtime, ToolEvent, ToolUi,
+};
+use tokio::sync::{mpsc, oneshot};
+
+/// Terminal approvals: shows the full preview and waits for a line typed **after** the prompt.
+/// Only `y` or `yes` approves; anything else (including an empty line) is a no.
+#[derive(Default)]
+struct CliUi {
+    /// `closed` and the waiting sender share one lock, so `close()` can never slip in between
+    /// "is stdin open?" and "register me as waiting" (which would leave an approval hanging).
+    state: std::sync::Mutex<ApprovalState>,
+}
+
+#[derive(Default)]
+struct ApprovalState {
+    closed: bool,
+    waiting: Option<oneshot::Sender<String>>,
+}
+
+impl CliUi {
+    /// No more input will come: a waiting approval and every future one are a no.
+    fn close(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.closed = true;
+            if let Some(sender) = state.waiting.take() {
+                let _ = sender.send(String::new());
+            }
+        }
+    }
+
+    /// Delivers `line` to a waiting approval. Returns `false` if nothing was waiting.
+    fn answer(&self, line: &str) -> bool {
+        let sender = self.state.lock().ok().and_then(|mut s| s.waiting.take());
+        match sender {
+            Some(sender) => {
+                let _ = sender.send(line.to_owned());
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+impl ToolUi for CliUi {
+    fn approve<'a>(&'a self, pending: &'a PendingApproval) -> BoxFuture<'a, bool> {
+        println!(
+            "\n\nLoki wants to run a tool that needs your approval:\n{}",
+            pending.preview()
+        );
+        let (sender, receiver) = oneshot::channel();
+        let registered = match self.state.lock() {
+            Ok(mut state) if !state.closed => {
+                state.waiting = Some(sender);
+                true
+            }
+            _ => false,
+        };
+        if !registered {
+            println!("No input is available to answer, so it is not approved.");
+            return Box::pin(async { false });
+        }
+        print!("Approve? [y/N] ");
+        flush();
+        Box::pin(async move {
+            let answer = receiver.await.unwrap_or_default();
+            let yes = matches!(answer.trim().to_lowercase().as_str(), "y" | "yes");
+            println!("{}", if yes { "Approved." } else { "Not approved." });
+            yes
+        })
+    }
+
+    fn notify(&self, event: &ToolEvent) {
+        let ToolEvent::Finished {
+            tool,
+            status,
+            detail,
+        } = event;
+        match detail {
+            Some(detail) => println!("\n[tool {tool}: {} ({detail})]", status.as_str()),
+            None => println!("\n[tool {tool}: {}]", status.as_str()),
+        }
+    }
+}
 
 /// What the user typed at the prompt.
 enum Input {
@@ -70,6 +153,7 @@ fn label(runtime: &Runtime) -> String {
 struct Lines {
     receiver: mpsc::Receiver<String>,
     queued: VecDeque<String>,
+    closed: bool,
 }
 
 impl Lines {
@@ -100,6 +184,7 @@ pub async fn run(runtime: &mut Runtime, resume: Option<ConversationId>) -> anyho
     let mut lines = Lines {
         receiver: spawn_stdin_reader(),
         queued: VecDeque::new(),
+        closed: false,
     };
     loop {
         if lines.queued.is_empty() {
@@ -182,21 +267,41 @@ async fn reply(
         print!("{token}");
         flush();
     };
+    let ui = CliUi::default();
+    if lines.closed {
+        ui.close();
+    }
     let generation = async {
         match text {
-            Some(text) => runtime.send(id, text, cancel.clone(), print_token).await,
-            None => runtime.retry_reply(id, cancel.clone(), print_token).await,
+            Some(text) => {
+                runtime
+                    .send(id, text, cancel.clone(), &ui, print_token)
+                    .await
+            }
+            None => {
+                runtime
+                    .retry_reply(id, cancel.clone(), &ui, print_token)
+                    .await
+            }
         }
     };
     tokio::pin!(generation);
+    let mut stdin_open = !lines.closed;
     let outcome = loop {
         tokio::select! {
             outcome = &mut generation => break outcome,
             _ = tokio::signal::ctrl_c() => cancel.cancel(),
-            line = lines.receiver.recv(), if !cancel.is_cancelled() => match line {
+            line = lines.receiver.recv(), if stdin_open => match line {
+                // A pending approval takes the next line typed after its prompt.
+                Some(line) if ui.answer(&line) => {}
                 Some(line) if line.trim() == "/stop" => cancel.cancel(),
                 Some(line) => lines.queued.push_back(line),
-                None => {} // stdin closed; let the reply finish
+                None => {
+                    // stdin closed: no one can approve, so any pending approval is a no.
+                    stdin_open = false;
+                    lines.closed = true;
+                    ui.close();
+                }
             },
         }
     };

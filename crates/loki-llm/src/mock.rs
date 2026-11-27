@@ -15,6 +15,8 @@
 //! ```
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::FutureExt;
@@ -130,6 +132,26 @@ impl MockScript {
         Self::new(raw.steps)
     }
 
+    /// Parses `{"scripts": [{"steps": [...]}, ...]}`: one script per model request, for
+    /// [`MockProvider::sequence`].
+    pub fn sequence_from_json(json: &str) -> Result<Vec<Self>, MockScriptError> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct RawSequence {
+            scripts: Vec<RawScript>,
+        }
+        let raw: RawSequence = serde_json::from_str(json)?;
+        if raw.scripts.is_empty() {
+            return Err(MockScriptError::Protocol(
+                "a sequence needs at least one script",
+            ));
+        }
+        raw.scripts
+            .into_iter()
+            .map(|script| Self::new(script.steps))
+            .collect()
+    }
+
     /// The validated steps.
     pub fn steps(&self) -> &[MockStep] {
         &self.steps
@@ -140,6 +162,8 @@ impl MockScript {
 enum Behaviour {
     /// Replays the same script for every request.
     Scripted(MockScript),
+    /// One script per request, in order; the last one repeats.
+    Sequence(Vec<MockScript>, Arc<AtomicUsize>),
     /// Replies with a fixed, clearly labelled echo of the last user message.
     Echo,
 }
@@ -150,6 +174,7 @@ pub struct MockProvider {
     behaviour: Behaviour,
     token_delay: Duration,
     health: ProviderHealth,
+    requests: Arc<Mutex<Vec<ChatRequest>>>,
 }
 
 impl MockProvider {
@@ -159,6 +184,7 @@ impl MockProvider {
             behaviour: Behaviour::Scripted(script),
             token_delay: Duration::ZERO,
             health: ProviderHealth::Ready,
+            requests: Arc::default(),
         }
     }
 
@@ -168,7 +194,24 @@ impl MockProvider {
             behaviour: Behaviour::Echo,
             token_delay: Duration::ZERO,
             health: ProviderHealth::Ready,
+            requests: Arc::default(),
         }
+    }
+
+    /// Plays `scripts[0]` for the first request, `scripts[1]` for the second, and so on; the last
+    /// script repeats. Drives multi-round tool-loop tests. `scripts` must not be empty.
+    pub fn sequence(scripts: Vec<MockScript>) -> Self {
+        Self {
+            behaviour: Behaviour::Sequence(scripts, Arc::default()),
+            token_delay: Duration::ZERO,
+            health: ProviderHealth::Ready,
+            requests: Arc::default(),
+        }
+    }
+
+    /// Every request received so far (what the "model" was shown), for test assertions.
+    pub fn recorded_requests(&self) -> Vec<ChatRequest> {
+        self.requests.lock().map(|r| r.clone()).unwrap_or_default()
     }
 
     /// Waits `delay` before every token, to simulate a slow model (and give Ctrl+C time to act).
@@ -186,8 +229,35 @@ impl MockProvider {
     }
 
     fn steps_for(&self, request: &ChatRequest) -> Vec<MockStep> {
+        let steps = self.raw_steps_for(request);
+        let file_id = last_file_id(request);
+        steps
+            .into_iter()
+            .map(|step| match step {
+                MockStep::ToolCall {
+                    tool,
+                    mut arguments,
+                } => {
+                    substitute_file_id(&mut arguments, file_id.as_deref());
+                    MockStep::ToolCall { tool, arguments }
+                }
+                other => other,
+            })
+            .collect()
+    }
+
+    fn raw_steps_for(&self, request: &ChatRequest) -> Vec<MockStep> {
         match &self.behaviour {
             Behaviour::Scripted(script) => script.steps.clone(),
+            Behaviour::Sequence(scripts, next) => {
+                let index = next
+                    .fetch_add(1, Ordering::SeqCst)
+                    .min(scripts.len().saturating_sub(1));
+                scripts
+                    .get(index)
+                    .map(|s| s.steps.clone())
+                    .unwrap_or_default()
+            }
             Behaviour::Echo => echo_steps(request),
         }
     }
@@ -314,6 +384,9 @@ impl ChatProvider for MockProvider {
     }
 
     fn stream_chat(&self, request: ChatRequest, cancel: CancellationToken) -> ChatStream {
+        if let Ok(mut requests) = self.requests.lock() {
+            requests.push(request.clone());
+        }
         let state = StreamState {
             steps: self.steps_for(&request).into(),
             cancel,
@@ -330,5 +403,32 @@ impl ChatProvider for MockProvider {
 
     fn context_limit(&self) -> u32 {
         MOCK_CONTEXT_LIMIT
+    }
+}
+
+/// Test hook (mock only): a tool-call argument equal to [`FILE_ID_PLACEHOLDER`] is replaced by the
+/// first `"file_id":"…"` found in the latest tool result the mock received, so a script can
+/// chain `files.search` -> `files.read` without knowing the runtime-generated ID.
+pub const FILE_ID_PLACEHOLDER: &str = "$FILE_ID";
+
+fn last_file_id(request: &ChatRequest) -> Option<String> {
+    let content = &request
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == Role::Tool)?
+        .content;
+    let start = content.find("\"file_id\":\"")? + "\"file_id\":\"".len();
+    let end = content[start..].find('"')? + start;
+    Some(content[start..end].to_owned())
+}
+
+fn substitute_file_id(arguments: &mut Value, file_id: Option<&str>) {
+    if let (Some(object), Some(file_id)) = (arguments.as_object_mut(), file_id) {
+        for value in object.values_mut() {
+            if value.as_str() == Some(FILE_ID_PLACEHOLDER) {
+                *value = Value::String(file_id.to_owned());
+            }
+        }
     }
 }

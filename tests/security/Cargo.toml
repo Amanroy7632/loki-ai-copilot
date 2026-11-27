@@ -1,0 +1,24 @@
+[package]
+name = "loki-security-tests"
+description = "Release-blocking security tests, one per SEC-xx ID in docs/SECURITY_MODEL.md (P3-T10)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+loki-core.workspace = true
+loki-llm.workspace = true
+loki-memory.workspace = true
+loki-policy.workspace = true
+loki-runtime.workspace = true
+loki-tools.workspace = true
+futures.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[lints]
+workspace = true

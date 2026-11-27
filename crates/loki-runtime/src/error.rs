@@ -69,6 +69,12 @@ pub enum RuntimeError {
     /// A cloud/remote model was requested. Loki never does cloud inference.
     #[error("'{0}' is an Ollama cloud model; Loki only runs local models")]
     CloudModelRefused(String),
+    /// The tool registry could not be built (a bug in a built-in tool spec).
+    #[error("tools: {0}")]
+    Tools(String),
+    /// A capability name or scope given by the user is not valid.
+    #[error("{0}")]
+    InvalidInput(String),
     /// Downloads are limited to the reviewed allowlist (licenses checked).
     #[error(
         "'{0}' is not in the reviewed model list (fixtures/models.json); see `loki models recommend`"

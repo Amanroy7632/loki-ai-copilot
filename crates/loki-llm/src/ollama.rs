@@ -437,8 +437,22 @@ impl OllamaProvider {
     }
 }
 
+/// Ollama chat message: assistant tool calls go in `tool_calls`; tool results carry `tool_name`.
 fn message_json(message: &ChatMessage) -> Value {
-    json!({ "role": message.role.as_str(), "content": message.content })
+    let mut out = json!({ "role": message.role.as_str(), "content": message.content });
+    if !message.tool_calls.is_empty() {
+        out["tool_calls"] = Value::Array(
+            message
+                .tool_calls
+                .iter()
+                .map(|call| json!({ "function": { "name": call.tool.as_str(), "arguments": call.arguments } }))
+                .collect(),
+        );
+    }
+    if let Some(tool) = &message.tool_name {
+        out["tool_name"] = Value::String(tool.clone());
+    }
+    out
 }
 
 /// Loki `ToolSpec` -> Ollama/OpenAI function tool. The dotted name is passed through unchanged;

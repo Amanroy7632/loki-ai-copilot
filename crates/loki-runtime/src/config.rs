@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 use crate::error::RuntimeError;
 
 /// The config version this build writes.
-pub const CONFIG_VERSION: u64 = 2;
+pub const CONFIG_VERSION: u64 = 3;
 
 /// Default Ollama endpoint: IPv4 loopback literal, never `localhost` (see `net.rs`).
 pub const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
@@ -34,15 +34,8 @@ pub enum ProviderKind {
     Ollama,
 }
 
-/// Outbound network policy (SECURITY_MODEL.md "Network modes").
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NetworkMode {
-    /// Loopback only. The default.
-    LocalOnly,
-    /// Also the internet tools the user has granted. Still no cloud inference.
-    ToolsAllowed,
-}
+/// Outbound network policy. Defined in `loki-core` (ADR-0011); same JSON form as before.
+pub use loki_core::NetworkMode;
 
 /// A directory the user allowed file tools to read. The model only ever sees `id`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +78,33 @@ pub struct Config {
     pub ollama: OllamaConfig,
     /// Context window sizing (version 2).
     pub context: ContextConfig,
+    /// Tool limits (version 3).
+    pub tools: ToolsConfig,
+}
+
+/// Tool loop limits (P3). Grants are **not** here: they live in the `permissions` table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolsConfig {
+    /// Offer tools to the model at all.
+    pub enabled: bool,
+    /// Tool calls per turn (hard maximum 20).
+    pub max_calls_per_turn: u32,
+    /// Deadline for one call, seconds.
+    pub timeout_secs: u32,
+    /// Tools running at the same time.
+    pub concurrency: u32,
+}
+
+impl Default for ToolsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_calls_per_turn: 6,
+            timeout_secs: 30,
+            concurrency: 2,
+        }
+    }
 }
 
 /// How to reach the local Ollama server.
@@ -129,6 +149,7 @@ impl Default for Config {
                 base_url: String::from(DEFAULT_OLLAMA_URL),
             },
             context: ContextConfig::default(),
+            tools: ToolsConfig::default(),
         }
     }
 }
@@ -146,7 +167,7 @@ pub struct LoadedConfig {
 type MigrationStep = fn(Map<String, Value>) -> Result<Map<String, Value>, String>;
 
 /// `MIGRATIONS[n]` migrates version `n` to `n + 1`. Append only.
-const MIGRATIONS: &[MigrationStep] = &[migrate_v0_to_v1, migrate_v1_to_v2];
+const MIGRATIONS: &[MigrationStep] = &[migrate_v0_to_v1, migrate_v1_to_v2, migrate_v2_to_v3];
 
 /// Version 0 is a file without a `version` field (hand-written, or from a pre-release build).
 /// Missing fields take the **version 1** defaults (frozen here, never `Config::default()`, which
@@ -178,6 +199,15 @@ fn migrate_v1_to_v2(mut old: Map<String, Value>) -> Result<Map<String, Value>, S
     old.entry("context")
         .or_insert_with(|| serde_json::json!({ "tokens": 4096, "reserve_tokens": 1024 }));
     old.insert(String::from("version"), Value::from(2_u64));
+    Ok(old)
+}
+
+/// Version 3 (P3) adds `tools` limits with their defaults.
+fn migrate_v2_to_v3(mut old: Map<String, Value>) -> Result<Map<String, Value>, String> {
+    old.entry("tools").or_insert_with(|| {
+        serde_json::json!({ "enabled": true, "max_calls_per_turn": 6, "timeout_secs": 30, "concurrency": 2 })
+    });
+    old.insert(String::from("version"), Value::from(3_u64));
     Ok(old)
 }
 
@@ -472,7 +502,8 @@ mod tests {
 "#;
         fs::write(&path, v1).unwrap();
         let loaded = load_or_init(&path).unwrap();
-        assert_eq!(loaded.config.version, 2);
+        assert_eq!(loaded.config.version, CONFIG_VERSION);
+        assert_eq!(loaded.config.tools, ToolsConfig::default());
         assert_eq!(
             loaded.config.provider,
             ProviderKind::Mock,

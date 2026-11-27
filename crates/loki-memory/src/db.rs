@@ -24,6 +24,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0002_message_stopped",
         include_str!("../../../migrations/0002_message_stopped.sql"),
     ),
+    (
+        "0003_tasks_audit_approvals_permissions",
+        include_str!("../../../migrations/0003_tasks_audit_approvals_permissions.sql"),
+    ),
 ];
 
 /// The schema version this build produces (the number of migrations).

@@ -44,7 +44,11 @@ CREATE TABLE settings (
   version     INTEGER NOT NULL
 );
 
--- P3-T03 / P3-T04: tasks, audit and approvals (kept separate from conversational memory)
+-- P3-T03 / P3-T04: tasks, audit, approvals, permissions. IMPLEMENTED in migrations/0003_*.sql
+-- (kept separate from conversational memory). Approvals are consumed with one conditional
+-- `UPDATE ... WHERE used_at IS NULL AND expires_at > now AND request_hash = ? AND decision =
+-- 'approved' RETURNING ...`, so reuse is impossible even under races (SEC-05).
+-- Startup marks queued/running/awaiting_approval tasks `interrupted`; nothing is replayed.
 CREATE TABLE tasks (
   id            TEXT PRIMARY KEY,
   state         TEXT NOT NULL,          -- TaskState, snake_case

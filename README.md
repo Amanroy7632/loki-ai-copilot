@@ -2,8 +2,8 @@
 
 Loki is a local-first, voice-enabled personal copilot. It talks with you, remembers what you allow it to, researches the web when you opt in, and runs **approved** actions on your own devices. By default it needs no cloud account and runs no remote inference.
 
-> **Status:** P2 (local chat through Ollama) is written and passes all checks locally; P1 and P2 gates are still open.
-> P0: T01 and T03 done. Nothing is committed yet (the .git folder is broken). See [docs/STATUS.md](docs/STATUS.md).
+> **Status:** P3 (tools, policy, approvals, audit) is written and passes all checks locally; the P1–P3 gates still need CI.
+> P0: T01–T03 done. P3 and P4-T01 are on branch `p3/tools-policy`. See [docs/STATUS.md](docs/STATUS.md).
 
 ## What Loki is, and is not
 
@@ -62,7 +62,25 @@ Your data lives in `~/Library/Application Support/Loki/` (`loki.db`, `config/con
 `logs/`). Logs are redacted; `LOKI_LOG=debug` makes them chattier. `--data-dir <dir>` (or
 `LOKI_DATA_DIR`) uses a separate folder, e.g. for experiments.
 
-### 5. Before you commit
+### 5. Let Loki use tools (P3)
+
+Nothing is allowed by default. Grant what you want, and Loki asks before anything that changes your Mac:
+
+```sh
+loki permissions list                       # capabilities, their status, your grants
+loki permissions grant clock                # time.now
+loki permissions grant system_info          # system.info (OS, CPU, RAM, disk; no host or user names)
+loki permissions grant app_launch           # app.list, and app.open (always asks [y/N] first)
+loki roots add docs ~/Documents             # a folder file tools may read (the model only sees "docs")
+loki permissions grant file_read --scope docs
+loki audit list                             # what ran, when, with redacted summaries
+loki audit show <task_id>
+```
+
+In chat, try "What time is it in Tokyo?" or "Open the Calculator app." Revoke with
+`loki permissions revoke <capability> [--scope <id>]`.
+
+### 6. Before you commit
 
 ```sh
 ./scripts/check.sh               # fmt, clippy, tests, contracts, tsc, cargo deny

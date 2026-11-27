@@ -8,6 +8,17 @@ publish.workspace = true
 
 [dependencies]
 loki-core.workspace = true
+directories.workspace = true
+serde.workspace = true
+sysinfo = { workspace = true, features = ["system", "disk"] }
+thiserror.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+plist.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

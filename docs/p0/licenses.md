@@ -18,4 +18,8 @@
 | SQLite (public domain) | bundled in libsqlite3-sys | yes | |
 | **MPL-2.0** | **option-ext 0.2.0** (via `directories` -> `dirs-sys`) | yes, binary distribution allowed; modified MPL files must be published | **Needs owner approval: D-07.** Allowed by a crate-scoped exception in `deny.toml` until decided. Alternative: drop `directories` and resolve paths by hand or through Tauri path APIs. |
 
+| **MIT-0** | **borrow-or-share 0.2.4** (via `jsonschema` -> `referencing` -> `fluent-uri`) | yes | MIT without the attribution clause (more permissive than MIT). **Needs owner confirmation: D-07.** Crate-scoped exception in `deny.toml`. |
+
+P3 additions (2026-11-27): jsonschema 0.63 (MIT), sha2 0.11 (MIT/Apache-2.0), jiff 1.0 (MIT/Unlicense), plist 1.10 (MIT), wiremock 0.6 (dev only, MIT/Apache-2.0).
+
 TypeScript (devDependency only, not shipped): typescript 6.0.3, Apache-2.0.

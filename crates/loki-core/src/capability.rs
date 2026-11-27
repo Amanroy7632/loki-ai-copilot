@@ -55,6 +55,39 @@ pub enum CapabilityStatus {
     },
 }
 
+impl Capability {
+    /// Every capability, for exhaustive tests and listings.
+    pub const ALL: [Self; 8] = [
+        Self::Clock,
+        Self::SystemInfo,
+        Self::AppLaunch,
+        Self::FileRead,
+        Self::Network,
+        Self::Microphone,
+        Self::Notifications,
+        Self::DeveloperTools,
+    ];
+
+    /// The stable snake_case name (same as serde), used in the `permissions` table and the CLI.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Clock => "clock",
+            Self::SystemInfo => "system_info",
+            Self::AppLaunch => "app_launch",
+            Self::FileRead => "file_read",
+            Self::Network => "network",
+            Self::Microphone => "microphone",
+            Self::Notifications => "notifications",
+            Self::DeveloperTools => "developer_tools",
+        }
+    }
+
+    /// Parses [`Capability::as_str`]. `None` for anything else.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.as_str() == value)
+    }
+}
+
 impl CapabilityStatus {
     /// `true` only for [`CapabilityStatus::Supported`]. Every other status must block execution.
     pub const fn is_supported(&self) -> bool {
@@ -96,6 +129,18 @@ mod tests {
             serde_json::to_value(Capability::AppLaunch).unwrap(),
             "app_launch"
         );
+    }
+
+    #[test]
+    fn capability_as_str_matches_serde() {
+        for capability in Capability::ALL {
+            assert_eq!(
+                serde_json::to_value(capability).unwrap(),
+                capability.as_str()
+            );
+            assert_eq!(Capability::parse(capability.as_str()), Some(capability));
+        }
+        assert_eq!(Capability::parse("root"), None);
     }
 
     #[test]

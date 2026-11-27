@@ -9,6 +9,21 @@ publish.workspace = true
 [dependencies]
 loki-core.workspace = true
 loki-platform.workspace = true
+loki-policy.workspace = true          # ADR-0011: Tool::execute requires loki_policy::Allowed
+futures.workspace = true
+jiff.workspace = true
+jsonschema.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+tokio-util.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }
 
 [lints]
 workspace = true
