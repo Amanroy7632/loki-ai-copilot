@@ -9,7 +9,7 @@
 | | |
 | --- | --- |
 | **Current phase** | P4: Voice ([phase file](phases/P04-voice.md)). Owner authorized parallel P4 development and then integration of P4-T01 into the main checkout after P3 implementation (2026-11-27). Earlier phase gates remain open. |
-| **Next ticket** | **P4-T02 Audio capture**. P3 is code complete (238 tests and native smoke test recorded) but still needs SEC tests passing in CI. Open owner items: the P2 offline test, D-05, D-07. |
+| **Next ticket** | **P4-T03 VAD and silence timeout**. P3 is code complete (238 tests and native smoke test recorded) but still needs SEC tests passing in CI. Open owner items: the P2 offline test, D-05, D-07. |
 | **Last gate passed** | none |
 | **Reference OS** | **macOS** (Apple Silicon first), ADR-0003 |
 
@@ -21,7 +21,7 @@
 | P1 Foundation | code complete; **all checks pass locally on macOS**; CI not yet run anywhere. Gate not passed. |
 | P2 Local chat | code complete; all checks pass locally (161 tests); manual chat against real Ollama recorded. Gate not passed (see Next ticket). |
 | P3 Tools and policy | code complete; all checks pass locally (238 tests); native macOS smoke test passed (real model, approved app launch). Gate not passed: SEC tests not yet run in CI. |
-| P4 Voice | P4-T01 state machine implemented and copied from isolated branch into main; combined checks pass (244 tests). Gate not passed. |
+| P4 Voice | P4-T01/T02 implemented: state machine and explicit microphone capture; combined checks pass (259 tests), native macOS capture recorded. Gate not passed. |
 | P5–P11 | not started |
 
 ## P0 tickets
@@ -80,9 +80,10 @@ P3 gate: [x] an allowed tool works end to end from the CLI; [x] denied, malforme
   failure, silence and speaking sequences. Review fix (2026-11-27): mute now keeps the cleanup
   barrier (`Muted { cleanup_pending }`) and a `Failed` event covers STT, agent and TTS errors.
   Ten voice tests. Source commit `7861b7b`; see `docs/handoffs/p4-t01.md`.
-- [ ] P4-T02 Audio capture: CPAL, bounded buffering, mono conversion and resampling; synthetic
-  tests and manual reference-OS capture required.
-- [ ] P4-T03..T09: not started. No capture, STT, TTS or CLI voice integration yet.
+- [x] P4-T02 Audio capture: CPAL default input, bounded oldest-frame replacement with counting,
+  mono conversion, continuous Rubato resampling to 16 kHz, typed errors and owning stream guard.
+  11 new tests; manual capture recorded in `docs/benchmarks/p4-capture.md` (0 dropped frames).
+- [ ] P4-T03..T09: not started. No VAD, STT, TTS or CLI voice integration yet.
 
 The owner explicitly authorized starting P4 before earlier gates passed, overriding the normal
 phase-order rule. P3 implementation and its recorded validation remain intact.
@@ -109,6 +110,8 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 ## Progress log
 
 Newest first. Format: `YYYY-MM-DD | ticket | what changed | commands run → result`.
+
+- 2026-11-27 | P4-T02 | Explicit capture, synthetic-source trait/tests, bounded queue and 16 kHz mono FFT conversion; ADR-0012, exact-pinned reviewed dependencies, Linux ALSA CI prerequisite. Native probe: 143872 frames at 48 kHz → 47958 at 16 kHz, no drops, no audio saved. First native attempt returned Backend; retry succeeded. | Voice tests: 21 passed; clippy passed. Initial full run hit stale Claude scratch-path test artifacts; fresh `CARGO_TARGET_DIR=/private/tmp/loki-p4-verified-target ./scripts/check.sh` → all passed, 259 tests, contracts/tsc/cargo deny passed. See `docs/handoffs/p4-t02.md`.
 
 - 2026-11-27 | P4-T01 review | Reviewed the P4-T01 state machine. Fixed: muting during active work skipped the cancel path's cleanup barrier, so after Unmute a new session (second mic stream) could start before the old work was released. Now `Muted { cleanup_pending: true }`; `CleanupComplete` clears it; Unmute while pending goes to `Cancelled`. Added `Failed` (Transcribing/Thinking/Speaking → Idle) so errors aren't reported as user cancels. Not changed: text-only replies still pass through Speaking (decide in P4-T06); no serde on VoiceState yet (needed in P5). | `cargo test -p loki-voice` → 10 passed; clippy clean; full `./scripts/check.sh` → all passed, 248 tests.
 - 2026-11-27 | P4-T01 integration | Copied the isolated voice state machine from `7861b7b` into main on owner request; reconciled status with completed P3. File-hash comparison confirmed P3 implementation unchanged; existing staging state preserved. | `./scripts/check.sh` outside sandbox → all passed, 244 tests, fmt/clippy, generated contracts, strict TypeScript and cargo deny. P4-T02 is next; no audio capture or CLI voice wiring yet.

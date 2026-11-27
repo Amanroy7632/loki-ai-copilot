@@ -64,6 +64,11 @@ jsonschema = { version = "0.63", default-features = false }
 sha2 = "0.11"
 jiff = "1.0"
 plist = "1.10"
+# P4-T02: checked on crates.io 2026-11-27. CPAL: Apache-2.0;
+# rubato/crossbeam-queue: MIT OR Apache-2.0. See ADR-0012.
+cpal = "=0.18.2"
+rubato = "=5.1.0"
+crossbeam-queue = "=0.3.14"
 
 [workspace.lints.rust]
 unsafe_code = "deny"          # FFI modules opt out locally, with a `// SAFETY:` comment per block
