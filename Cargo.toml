@@ -1,0 +1,66 @@
+# Loki Rust workspace.
+#
+# - Every crate inherits version, edition and lints from here. Don't override them per crate
+#   without an ADR.
+# - Declare every dependency version ONCE, under [workspace.dependencies]. Crates then use
+#   `name.workspace = true`.
+# - Internal crates are listed too, so the dependency graph is visible in one place. The allowed
+#   edges are in docs/ARCHITECTURE.md#crate-dependency-rules.
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+exclude = ["spikes"]          # P0 spikes are standalone crates, never workspace members
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.97"          # keep equal to rust-toolchain.toml (P1-T01)
+publish = false
+# License is an open decision (see docs/STATUS.md, D-05). Add `license = "..."` here once it is decided.
+
+[workspace.dependencies]
+# Internal crates
+loki-core = { path = "crates/loki-core" }
+loki-llm = { path = "crates/loki-llm" }
+loki-tools = { path = "crates/loki-tools" }
+loki-policy = { path = "crates/loki-policy" }
+loki-memory = { path = "crates/loki-memory" }
+loki-voice = { path = "crates/loki-voice" }
+loki-platform = { path = "crates/loki-platform" }
+loki-agent = { path = "crates/loki-agent" }
+loki-runtime = { path = "crates/loki-runtime" }
+
+# Third-party crates. Add new ones here, with the exact version verified at the time you add them.
+# Versions checked on crates.io on 2026-11-27. Licenses: all MIT and/or Apache-2.0 except where noted
+# (rusqlite bundles SQLite, which is public domain). `cargo deny check` enforces this (deny.toml).
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+uuid = { version = "1.29", features = ["v7"] }
+futures = { version = "0.3", default-features = false, features = ["std", "async-await"] }
+tokio = { version = "1.54", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "signal", "io-std", "io-util"] }
+tokio-util = "0.7"
+rusqlite = { version = "0.43", features = ["bundled"] }
+directories = "6.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+regex = "1.13"
+clap = { version = "4.6", features = ["derive", "env"] }
+anyhow = "1.0"
+ts-rs = { version = "12.0", features = ["serde-json-impl", "no-serde-warnings"] }
+tempfile = "3.27"
+
+[workspace.lints.rust]
+unsafe_code = "deny"          # FFI modules opt out locally, with a `// SAFETY:` comment per block
+missing_docs = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"          # allowed in tests via clippy.toml
+expect_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"

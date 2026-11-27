@@ -1,0 +1,13 @@
+[package]
+name = "loki-policy"
+description = "Policy engine, grants and approvals. Fails closed."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+loki-core.workspace = true
+
+[lints]
+workspace = true

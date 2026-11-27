@@ -1,0 +1,6 @@
+# Pinned so every developer, agent and CI runner uses the same compiler (P1-T01).
+# Bump deliberately: update `rust-version` in the root Cargo.toml in the same change.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

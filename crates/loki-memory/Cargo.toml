@@ -1,0 +1,20 @@
+[package]
+name = "loki-memory"
+description = "SQLite storage: migrations, repositories, FTS5 retrieval, retention and deletion."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+loki-core.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[lints]
+workspace = true

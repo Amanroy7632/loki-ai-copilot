@@ -1,0 +1,23 @@
+[package]
+name = "loki-agent"
+description = "Agent orchestration: context building and the model <-> tool loop."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+loki-core.workspace = true
+loki-llm.workspace = true
+loki-tools.workspace = true
+loki-policy.workspace = true
+loki-memory.workspace = true
+futures.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true

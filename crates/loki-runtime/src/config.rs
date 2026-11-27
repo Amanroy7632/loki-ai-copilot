@@ -1,0 +1,404 @@
+//! Versioned user configuration (ADR-0008).
+//!
+//! - Stored as JSON in `<config_dir>/config.json`. **Never** holds secrets (they go in the OS
+//!   secret store).
+//! - Carries a `version`. Older files are migrated step by step (`vN -> vN+1`) on load, and the
+//!   previous file is kept as `config.json.v<N>.bak`.
+//! - Writes are atomic: write a temp file in the same directory, fsync, rename over the target.
+//! - A file that can't be parsed is moved aside to `config.json.corrupt-<unix_ms>` and replaced
+//!   by the default, with a warning. A file from a **newer** version is refused and left alone.
+
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+use loki_core::UnixMillis;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+
+use crate::error::RuntimeError;
+
+/// The config version this build writes.
+pub const CONFIG_VERSION: u64 = 1;
+
+/// Which model backend to use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderKind {
+    /// The scripted `MockProvider`. The only provider in P1; replies are labelled as mock.
+    Mock,
+    /// A local Ollama server (P2). Selecting it before P2 is an error, never a silent fallback.
+    Ollama,
+}
+
+/// Outbound network policy (SECURITY_MODEL.md "Network modes").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkMode {
+    /// Loopback only. The default.
+    LocalOnly,
+    /// Also the internet tools the user has granted. Still no cloud inference.
+    ToolsAllowed,
+}
+
+/// A directory the user allowed file tools to read. The model only ever sees `id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AllowedRoot {
+    /// Stable opaque identifier given to the model instead of the path.
+    pub id: String,
+    /// Absolute path on this machine.
+    pub path: PathBuf,
+}
+
+/// How long history is kept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Retention {
+    /// Delete conversations older than this many days. `None` keeps history until the user clears it.
+    pub history_days: Option<u32>,
+}
+
+/// The user configuration. Unknown fields are rejected (and the file treated as corrupt), so a
+/// typo can't silently change behaviour.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Config {
+    /// Schema version of this file. Always [`CONFIG_VERSION`] after loading.
+    pub version: u64,
+    /// The model backend.
+    pub provider: ProviderKind,
+    /// The model to use with the provider. `None` until onboarding picks one (P2).
+    pub model_id: Option<String>,
+    /// Directories file tools may read (P3).
+    pub allowed_roots: Vec<AllowedRoot>,
+    /// Outbound network policy.
+    pub network_mode: NetworkMode,
+    /// History retention.
+    pub retention: Retention,
+    /// Wake word enabled (P4). Off by default.
+    pub wake_word: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            version: CONFIG_VERSION,
+            provider: ProviderKind::Mock,
+            model_id: None,
+            allowed_roots: Vec::new(),
+            network_mode: NetworkMode::LocalOnly,
+            retention: Retention::default(),
+            wake_word: false,
+        }
+    }
+}
+
+/// The result of loading: the config plus anything the user should be told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedConfig {
+    /// The effective configuration.
+    pub config: Config,
+    /// Human-readable warnings (e.g. a corrupt file was replaced).
+    pub warnings: Vec<String>,
+}
+
+/// One migration step: turns a version-`N` JSON object into a version-`N+1` object.
+type MigrationStep = fn(Map<String, Value>) -> Result<Map<String, Value>, String>;
+
+/// `MIGRATIONS[n]` migrates version `n` to `n + 1`. Append only.
+const MIGRATIONS: &[MigrationStep] = &[migrate_v0_to_v1];
+
+/// Version 0 is a file without a `version` field (hand-written, or from a pre-release build).
+/// Missing fields take their defaults; present fields are kept as they are.
+fn migrate_v0_to_v1(old: Map<String, Value>) -> Result<Map<String, Value>, String> {
+    let defaults = serde_json::to_value(Config::default()).map_err(|error| error.to_string())?;
+    let Value::Object(mut merged) = defaults else {
+        return Err(String::from("default config is not an object"));
+    };
+    for (key, value) in old {
+        merged.insert(key, value);
+    }
+    merged.insert(String::from("version"), Value::from(1_u64));
+    Ok(merged)
+}
+
+/// Loads the config at `path`, creating, migrating or repairing it as described in the module docs.
+pub fn load_or_init(path: &Path) -> Result<LoadedConfig, RuntimeError> {
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let config = Config::default();
+            save(path, &config)?;
+            return Ok(LoadedConfig {
+                config,
+                warnings: Vec::new(),
+            });
+        }
+        Err(source) => {
+            return Err(RuntimeError::Io {
+                action: "read config",
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+
+    let object = match serde_json::from_str::<Value>(&raw) {
+        Ok(Value::Object(object)) => object,
+        Ok(_) | Err(_) => return recover_corrupt(path, "it is not a JSON object"),
+    };
+
+    let found = match object.get("version") {
+        None => 0,
+        Some(value) => match value.as_u64() {
+            Some(version) => version,
+            None => return recover_corrupt(path, "its `version` is not a number"),
+        },
+    };
+    if found > CONFIG_VERSION {
+        return Err(RuntimeError::ConfigTooNew {
+            found,
+            supported: CONFIG_VERSION,
+        });
+    }
+
+    let migrated = migrate(object, found)?;
+    let config = match serde_json::from_value::<Config>(Value::Object(migrated)) {
+        Ok(config) => config,
+        Err(_) => return recover_corrupt(path, "it has missing, unknown or invalid fields"),
+    };
+
+    let mut warnings = Vec::new();
+    if found < CONFIG_VERSION {
+        let backup = sibling(path, &format!("v{found}.bak"));
+        fs::copy(path, &backup).map_err(|source| RuntimeError::Io {
+            action: "back up config",
+            path: backup.clone(),
+            source,
+        })?;
+        save(path, &config)?;
+        warnings.push(format!(
+            "Migrated config from version {found} to {CONFIG_VERSION}; the old file is at {}",
+            backup.display()
+        ));
+    }
+    Ok(LoadedConfig { config, warnings })
+}
+
+fn migrate(mut object: Map<String, Value>, from: u64) -> Result<Map<String, Value>, RuntimeError> {
+    for version in from..CONFIG_VERSION {
+        let step = usize::try_from(version)
+            .ok()
+            .and_then(|index| MIGRATIONS.get(index))
+            .ok_or_else(|| RuntimeError::ConfigMigration {
+                from: version,
+                reason: String::from("no migration step registered"),
+            })?;
+        object = step(object).map_err(|reason| RuntimeError::ConfigMigration {
+            from: version,
+            reason,
+        })?;
+    }
+    Ok(object)
+}
+
+/// Moves a bad file aside and writes the default config in its place.
+fn recover_corrupt(path: &Path, why: &str) -> Result<LoadedConfig, RuntimeError> {
+    let backup = sibling(path, &format!("corrupt-{}", UnixMillis::now().0));
+    fs::rename(path, &backup).map_err(|source| RuntimeError::Io {
+        action: "move corrupt config aside",
+        path: backup.clone(),
+        source,
+    })?;
+    let config = Config::default();
+    save(path, &config)?;
+    let warning = format!(
+        "The config file was unreadable because {why}. It was moved to {} and the defaults were restored.",
+        backup.display()
+    );
+    tracing::warn!("{warning}");
+    Ok(LoadedConfig {
+        config,
+        warnings: vec![warning],
+    })
+}
+
+/// `config.json` + `suffix` -> `config.json.<suffix>`, in the same directory.
+fn sibling(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(".");
+    name.push(suffix);
+    path.with_file_name(name)
+}
+
+/// Writes `config` atomically: temp file in the same directory, fsync, then rename.
+///
+/// Rename within one directory is atomic on every supported OS (on Windows, `std::fs::rename`
+/// replaces the target), so readers see either the old file or the new one, never a torn write.
+pub fn save(path: &Path, config: &Config) -> Result<(), RuntimeError> {
+    let io = |action: &'static str, at: &Path| {
+        let at = at.to_path_buf();
+        move |source| RuntimeError::Io {
+            action,
+            path: at,
+            source,
+        }
+    };
+    let dir = path.parent().unwrap_or(Path::new("."));
+    fs::create_dir_all(dir).map_err(io("create config dir", dir))?;
+    let temp = sibling(path, &format!("tmp-{}", std::process::id()));
+    let mut json = serde_json::to_vec_pretty(config).map_err(|error| RuntimeError::Io {
+        action: "serialize config",
+        path: path.to_path_buf(),
+        source: std::io::Error::other(error),
+    })?;
+    json.push(b'\n');
+    {
+        let mut file = File::create(&temp).map_err(io("create temp config", &temp))?;
+        file.write_all(&json)
+            .map_err(io("write temp config", &temp))?;
+        file.sync_all().map_err(io("sync temp config", &temp))?;
+    }
+    if let Err(source) = fs::rename(&temp, path) {
+        let _ = fs::remove_file(&temp);
+        return Err(RuntimeError::Io {
+            action: "replace config",
+            path: path.to_path_buf(),
+            source,
+        });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_path(dir: &tempfile::TempDir) -> PathBuf {
+        dir.path().join("config.json")
+    }
+
+    fn backups(dir: &tempfile::TempDir, marker: &str) -> Vec<PathBuf> {
+        fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.to_string_lossy().contains(marker))
+            .collect()
+    }
+
+    #[test]
+    fn default_config_is_private_and_offline() {
+        let config = Config::default();
+        assert_eq!(config.version, CONFIG_VERSION);
+        assert_eq!(config.network_mode, NetworkMode::LocalOnly);
+        assert!(!config.wake_word);
+        assert!(config.allowed_roots.is_empty());
+        assert_eq!(config.retention.history_days, None);
+    }
+
+    #[test]
+    fn missing_file_creates_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = config_path(&dir);
+        let loaded = load_or_init(&path).unwrap();
+        assert_eq!(loaded.config, Config::default());
+        assert!(loaded.warnings.is_empty());
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn config_round_trips_through_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = config_path(&dir);
+        let config = Config {
+            model_id: Some("qwen2.5:3b-instruct".into()),
+            allowed_roots: vec![AllowedRoot {
+                id: "docs".into(),
+                path: dir.path().join("Documents"),
+            }],
+            network_mode: NetworkMode::ToolsAllowed,
+            retention: Retention {
+                history_days: Some(30),
+            },
+            wake_word: true,
+            ..Config::default()
+        };
+        save(&path, &config).unwrap();
+        let loaded = load_or_init(&path).unwrap();
+        assert_eq!(loaded.config, config);
+        assert!(loaded.warnings.is_empty());
+        assert!(backups(&dir, "tmp-").is_empty(), "temp file left behind");
+    }
+
+    #[test]
+    fn corrupted_file_is_backed_up_and_replaced_with_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = config_path(&dir);
+        fs::write(&path, "{ this is not json").unwrap();
+        let loaded = load_or_init(&path).unwrap();
+        assert_eq!(loaded.config, Config::default());
+        assert_eq!(loaded.warnings.len(), 1);
+        let saved = backups(&dir, "corrupt-");
+        assert_eq!(saved.len(), 1);
+        assert_eq!(fs::read_to_string(&saved[0]).unwrap(), "{ this is not json");
+        // The replacement is valid and loads cleanly.
+        assert!(load_or_init(&path).unwrap().warnings.is_empty());
+    }
+
+    #[test]
+    fn unknown_field_is_treated_as_corrupt() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = config_path(&dir);
+        let mut value = serde_json::to_value(Config::default()).unwrap();
+        value["auto_approve_everything"] = Value::Bool(true);
+        fs::write(&path, value.to_string()).unwrap();
+        let loaded = load_or_init(&path).unwrap();
+        assert_eq!(loaded.config, Config::default());
+        assert_eq!(backups(&dir, "corrupt-").len(), 1);
+    }
+
+    #[test]
+    fn version_0_file_is_migrated_and_backed_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = config_path(&dir);
+        let v0 = r#"{ "model_id": "llama3.2:3b", "network_mode": "tools_allowed" }"#;
+        fs::write(&path, v0).unwrap();
+
+        let loaded = load_or_init(&path).unwrap();
+        assert_eq!(loaded.config.version, CONFIG_VERSION);
+        assert_eq!(loaded.config.model_id.as_deref(), Some("llama3.2:3b"));
+        assert_eq!(loaded.config.network_mode, NetworkMode::ToolsAllowed);
+        assert_eq!(loaded.config.provider, ProviderKind::Mock);
+        assert_eq!(loaded.warnings.len(), 1);
+
+        let backup = path.with_file_name("config.json.v0.bak");
+        assert_eq!(fs::read_to_string(backup).unwrap(), v0);
+        let on_disk: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(on_disk["version"], CONFIG_VERSION);
+        // Second load: already current, nothing to migrate.
+        assert!(load_or_init(&path).unwrap().warnings.is_empty());
+    }
+
+    #[test]
+    fn newer_version_is_refused_and_left_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = config_path(&dir);
+        let future = r#"{ "version": 99, "provider": "something_new" }"#;
+        fs::write(&path, future).unwrap();
+        let error = load_or_init(&path).unwrap_err();
+        assert!(
+            matches!(error, RuntimeError::ConfigTooNew { found: 99, .. }),
+            "{error:?}"
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), future);
+    }
+
+    #[test]
+    fn every_version_has_a_migration_step() {
+        assert_eq!(MIGRATIONS.len() as u64, CONFIG_VERSION);
+    }
+}

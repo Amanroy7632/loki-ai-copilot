@@ -1,0 +1,4 @@
+# JS workspace. Packages are created in P1-T03 (contracts) and P5 (desktop app, shared UI).
+packages:
+  - "apps/*"
+  - "packages/*"

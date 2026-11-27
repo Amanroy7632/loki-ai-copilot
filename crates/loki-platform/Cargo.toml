@@ -1,0 +1,13 @@
+[package]
+name = "loki-platform"
+description = "OS abstraction: capability discovery and native adapters behind cfg gates."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+loki-core.workspace = true
+
+[lints]
+workspace = true

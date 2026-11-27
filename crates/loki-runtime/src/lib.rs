@@ -1,0 +1,39 @@
+//! # loki-runtime
+//!
+//! Composition root: configuration, paths, job scheduling, lifecycle and dependency wiring.
+//!
+//! **Status:** P1-T06 (paths, versioned config), P1-T07 (logging, redaction) and the P1-T08
+//! [`Runtime`] API are implemented. Next tickets: P2-T06 (network policy), P3-T04 (jobs),
+//! P5-T02 (Tauri API).
+//!
+//! ## Responsibilities
+//!
+//! - Load the versioned configuration from the per-user app-data dir, migrating it atomically.
+//! - Build concrete providers, platform adapters and repositories, and inject them into the agent.
+//! - Own the network policy and the shared HTTP client (local-only mode blocks everything but loopback).
+//! - Run the job queue: tool semaphore, cancellation tokens, recovering incomplete tasks as `Interrupted` on startup.
+//! - Expose the single API that the CLI and the Tauri commands call.
+//!
+//! ## Must not
+//!
+//! - Hold business rules that belong in agent, policy or tools. It wires; it doesn't decide.
+//! - Hard-code home directories.
+//!
+//! ## Allowed internal dependencies
+//!
+//! `loki-core`, `loki-llm`, `loki-tools`, `loki-policy`, `loki-memory`, `loki-voice`, `loki-platform`, `loki-agent`. Adding another edge needs an ADR (see `docs/ARCHITECTURE.md`).
+
+pub mod app;
+pub mod config;
+pub mod error;
+pub mod ids;
+pub mod logging;
+pub mod paths;
+pub mod redact;
+
+pub use app::{ReplyOutcome, Runtime, RuntimeOptions};
+pub use config::{Config, NetworkMode, ProviderKind};
+pub use error::RuntimeError;
+pub use loki_llm::CancellationToken;
+pub use paths::{DATA_DIR_ENV, Paths};
+pub use redact::{Redactor, redact};

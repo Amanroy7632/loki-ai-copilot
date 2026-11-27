@@ -1,0 +1,55 @@
+# cargo-deny configuration (P1-T09). CI runs `cargo deny check`; run it locally the same way.
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check every feature, including loki-core's `ts` feature used for contract generation.
+all-features = true
+
+[advisories]
+# Known vulnerabilities (RustSec) always fail. Yanked crates fail too.
+yanked = "deny"
+# Unmaintained crates fail only when they are direct dependencies of a workspace crate.
+unmaintained = "workspace"
+ignore = []
+
+[licenses]
+# Permissive licenses only (docs/DEVELOPMENT.md section 6). Anything else needs owner approval,
+# an entry in docs/p0/licenses.md, and a crate-scoped exception below.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "Zlib",
+  "Unicode-3.0",
+  "Unlicense",
+]
+confidence-threshold = 0.93
+unused-allowed-license = "allow"
+exceptions = [
+  # Pulled in by `directories` -> `dirs-sys`. MPL-2.0 is file-level copyleft: shipping a binary is
+  # allowed, but changes to this crate's files would have to be published. PENDING OWNER
+  # APPROVAL: decision D-07 in docs/STATUS.md. Remove this line if D-07 rejects it.
+  { allow = ["MPL-2.0"], crate = "option-ext" },
+]
+
+[licenses.private]
+# Workspace crates are publish = false and have no license yet (decision D-05).
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Internal path dependencies have no version; that's fine because nothing is published.
+allow-wildcard-paths = true
+deny = [
+  # OpenSSL: we use rustls (ADR-0001). Keeps native TLS from sneaking in through a feature.
+  { crate = "openssl-sys" },
+  { crate = "native-tls" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

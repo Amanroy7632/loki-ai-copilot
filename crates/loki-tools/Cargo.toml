@@ -1,0 +1,14 @@
+[package]
+name = "loki-tools"
+description = "Tool trait, registry, JSON Schema validation, executor and built-in tools."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+loki-core.workspace = true
+loki-platform.workspace = true
+
+[lints]
+workspace = true

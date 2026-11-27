@@ -1,0 +1,6 @@
+{
+  "steps": [
+    { "type": "token", "text": "Partial" },
+    { "type": "error", "error": "unavailable", "message": "model server stopped" }
+  ]
+}

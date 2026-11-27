@@ -1,0 +1,8 @@
+{
+  "steps": [
+    { "type": "token", "text": "first" },
+    { "type": "delay", "ms": 30000 },
+    { "type": "token", "text": "never reached" },
+    { "type": "done" }
+  ]
+}

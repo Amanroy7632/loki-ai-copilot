@@ -1,0 +1,34 @@
+[package]
+name = "loki-runtime"
+description = "Composition root: configuration, paths, job scheduling, lifecycle and dependency wiring."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+loki-core.workspace = true
+loki-llm.workspace = true
+loki-tools.workspace = true
+loki-policy.workspace = true
+loki-memory.workspace = true
+loki-voice.workspace = true
+loki-platform.workspace = true
+loki-agent.workspace = true
+directories.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[lints]
+workspace = true

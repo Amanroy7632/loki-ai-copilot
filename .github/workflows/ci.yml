@@ -1,0 +1,71 @@
+# CI: the same checks as scripts/check.*, on native runners for each desktop OS (P1-T09).
+# P5 adds the desktop JS jobs. P11-T05 pins actions by commit SHA.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Lockfile must be committed and current; CI never silently updates it.
+  CARGO_NET_RETRY: "3"
+
+jobs:
+  rust:
+    name: rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup toolchain install || rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: clippy (ts feature)
+        run: cargo clippy -p loki-core --features ts --all-targets --locked -- -D warnings
+      - name: test
+        run: cargo test --workspace --locked
+
+  contracts:
+    # Generation is deterministic, so one OS is enough.
+    name: contracts (generated TS is current and compiles)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup toolchain install || rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Fail if generated contracts are stale
+        run: ./scripts/gen-contracts.sh --check
+      - uses: pnpm/action-setup@v4 # reads packageManager from package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: tsc --strict
+        run: pnpm --filter @loki/contracts typecheck
+
+  deny:
+    name: cargo deny (licenses, advisories, bans, sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check   # deny.toml sets [graph] all-features = true

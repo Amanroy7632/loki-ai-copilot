@@ -1,0 +1,8 @@
+{
+  "steps": [
+    { "type": "token", "text": "Hello" },
+    { "type": "token", "text": ", " },
+    { "type": "token", "text": "world" },
+    { "type": "done", "prompt_tokens": 3, "completion_tokens": 3 }
+  ]
+}

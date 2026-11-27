@@ -1,0 +1,12 @@
+{
+  "name": "loki-workspace",
+  "private": true,
+  "description": "JS workspace root for Loki. Generated contracts live in packages/contracts (P1-T03); the desktop app and shared UI are added in P5.",
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --if-present typecheck"
+  }
+}

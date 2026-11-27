@@ -1,0 +1,13 @@
+[package]
+name = "loki-voice"
+description = "Audio pipeline: capture, resampling, VAD, speech-to-text, TTS and the voice state machine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+loki-core.workspace = true
+
+[lints]
+workspace = true

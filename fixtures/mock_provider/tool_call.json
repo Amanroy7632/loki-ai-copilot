@@ -1,0 +1,7 @@
+{
+  "steps": [
+    { "type": "token", "text": "Let me check the time." },
+    { "type": "tool_call", "tool": "time.now", "arguments": { "timezone": "Europe/Berlin" } },
+    { "type": "done" }
+  ]
+}
