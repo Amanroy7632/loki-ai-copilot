@@ -64,6 +64,29 @@ pub struct Message {
     pub content: String,
     /// When it was stored, UTC.
     pub created_at: UnixMillis,
+    /// `true` when generation was stopped by the user before the model finished (P2-T02).
+    /// The content is then partial. Always `false` for non-assistant messages.
+    pub stopped: bool,
+}
+
+impl Message {
+    /// A complete (not stopped) message.
+    pub fn new(
+        id: MessageId,
+        conversation_id: ConversationId,
+        role: Role,
+        content: impl Into<String>,
+        created_at: UnixMillis,
+    ) -> Self {
+        Self {
+            id,
+            conversation_id,
+            role,
+            content: content.into(),
+            created_at,
+            stopped: false,
+        }
+    }
 }
 
 /// A conversation's summary, as listed in history. Messages are loaded separately.
@@ -93,7 +116,16 @@ mod tests {
             role: Role::Assistant,
             content: "Hello".into(),
             created_at: UnixMillis(1_800_000_000_000),
+            stopped: true,
         }
+    }
+
+    #[test]
+    fn stopped_is_required_on_the_wire() {
+        let mut raw = serde_json::to_value(sample()).unwrap();
+        assert_eq!(raw["stopped"], true);
+        raw.as_object_mut().unwrap().remove("stopped");
+        assert!(serde_json::from_value::<Message>(raw).is_err());
     }
 
     #[test]

@@ -55,4 +55,23 @@ pub enum RuntimeError {
     /// The configured provider isn't available in this build.
     #[error("provider '{0}' is not available yet in this build")]
     ProviderUnavailable(String),
+    /// A chat turn failed (storage or provider).
+    #[error(transparent)]
+    Agent(#[from] loki_agent::AgentError),
+    /// The network policy refused a URL or client.
+    #[error(transparent)]
+    Network(#[from] crate::net::NetworkError),
+    /// Ollama is selected but no model is configured.
+    #[error(
+        "no model selected. Run `loki models recommend`, then `loki models use <id>` (or pass --model)"
+    )]
+    NoModelSelected,
+    /// A cloud/remote model was requested. Loki never does cloud inference.
+    #[error("'{0}' is an Ollama cloud model; Loki only runs local models")]
+    CloudModelRefused(String),
+    /// Downloads are limited to the reviewed allowlist (licenses checked).
+    #[error(
+        "'{0}' is not in the reviewed model list (fixtures/models.json); see `loki models recommend`"
+    )]
+    ModelNotAllowlisted(String),
 }

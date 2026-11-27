@@ -13,6 +13,7 @@ fn loki(data_dir: &Path) -> Command {
     command
         .arg("--data-dir")
         .arg(data_dir)
+        .args(["--provider", "mock"])
         // Make sure the developer's own override can't leak into tests.
         .env_remove("LOKI_DATA_DIR")
         .env("LOKI_LOG", "debug");
@@ -235,7 +236,7 @@ fn mock_ctrl_c_stops_generation_but_not_the_app() {
     let status = child.wait().unwrap();
     let out = reader.join().unwrap();
     assert!(status.success(), "loki exited with {status}: {out}");
-    assert!(out.contains("[stopped; not saved."), "{out}");
+    assert!(out.contains("[stopped; partial reply saved."), "{out}");
     assert!(
         out.contains("Saved as conversation"),
         "app kept running after Ctrl+C: {out}"
@@ -244,8 +245,110 @@ fn mock_ctrl_c_stops_generation_but_not_the_app() {
     let shown = history_show(dir.path(), &only_conversation_id(dir.path()));
     assert_eq!(shown.matches("[user]").count(), 1, "{shown}");
     assert_eq!(
-        shown.matches("[assistant]").count(),
-        0,
-        "cancelled reply must not be stored: {shown}"
+        shown
+            .matches("[assistant] [stopped] Mock reply: word")
+            .count(),
+        1,
+        "the partial reply is stored and marked stopped: {shown}"
     );
+}
+
+/// `/stop` typed while a reply streams stops it (P2-T07), and later piped lines still run.
+#[test]
+fn mock_slash_stop_stops_the_reply_and_later_lines_still_run() {
+    use std::time::Duration;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut child = loki(dir.path())
+        .arg("chat")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut child_stdout = child.stdout.take().unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel::<String>();
+    let reader = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut all = String::new();
+        let mut buffer = [0_u8; 256];
+        while let Ok(read) = child_stdout.read(&mut buffer) {
+            if read == 0 {
+                break;
+            }
+            all.push_str(&String::from_utf8_lossy(&buffer[..read]));
+            let _ = sender.send(all.clone());
+        }
+        all
+    });
+    writeln!(stdin, "{}", vec!["word"; 200].join(" ")).unwrap();
+    stdin.flush().unwrap();
+    // Send /stop only once tokens are visibly streaming, so there is partial text to save.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while !receiver
+        .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+        .expect("reply never started streaming")
+        .contains("Mock reply: word")
+    {}
+    writeln!(stdin, "/stop").unwrap();
+    writeln!(stdin, "second").unwrap();
+    writeln!(stdin, "/quit").unwrap();
+    drop(stdin);
+    assert!(child.wait().unwrap().success());
+    let out = reader.join().unwrap();
+    assert!(out.contains("[stopped; partial reply saved."), "{out}");
+    assert!(out.contains("Mock reply: second"), "{out}");
+}
+
+#[test]
+fn chat_without_a_model_explains_what_to_do() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_loki"))
+        .args(["--data-dir"])
+        .arg(dir.path())
+        .arg("chat")
+        .env_remove("LOKI_DATA_DIR")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("no model selected"), "{stderr}");
+    assert!(stderr.contains("loki models recommend"), "{stderr}");
+}
+
+#[test]
+fn models_recommend_works_without_ollama() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut recommend = loki(dir.path());
+    recommend.args(["models", "recommend"]);
+    let out = stdout(&recommend.output().unwrap());
+    assert!(out.contains("RAM:"), "{out}");
+    assert!(out.contains("verified"), "{out}");
+}
+
+#[test]
+fn models_pull_refuses_unreviewed_models() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut pull = loki(dir.path());
+    pull.args(["models", "pull", "some-random:7b", "--accept-license"]);
+    let output = pull.output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("not in Loki's reviewed model list"));
+}
+
+#[test]
+fn models_use_saves_the_choice_and_refuses_cloud_models() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut use_cloud = loki(dir.path());
+    use_cloud.args(["models", "use", "gpt-oss:20b-cloud"]);
+    assert!(!use_cloud.output().unwrap().status.success());
+
+    let mut use_local = loki(dir.path());
+    use_local.args(["models", "use", "qwen3:4b"]);
+    stdout(&use_local.output().unwrap());
+    let config = std::fs::read_to_string(dir.path().join("config").join("config.json")).unwrap();
+    assert!(config.contains("\"model_id\": \"qwen3:4b\""), "{config}");
+    assert!(config.contains("\"provider\": \"ollama\""), "{config}");
 }

@@ -71,7 +71,7 @@ loki-policy    ──► core
 loki-memory    ──► core
 loki-voice     ──► core
 loki-platform  ──► core
-loki-tools     ──► core, platform
+loki-tools     ──► core, platform, policy                (policy: ADR-0011, the `Allowed` permit)
 loki-agent     ──► core, llm, tools, policy, memory     (traits only, no concrete adapters)
 loki-runtime   ──► everything above                      (composition root)
 loki-cli       ──► runtime, core

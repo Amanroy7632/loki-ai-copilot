@@ -10,7 +10,7 @@ file, the Rust types and the generated TS in the same commit.
 ToolRequest   { id, session_id, tool, arguments, deadline }        deny_unknown_fields
 ToolSpec      { name, description, input_schema, risk, capability } deny_unknown_fields
 ToolResult    { id, status, data?, error_code?, duration_ms }         deny_unknown_fields
-Message       { id, conversation_id, role, content, created_at }   deny_unknown_fields
+Message       { id, conversation_id, role, content, created_at, stopped }   deny_unknown_fields (stopped: P2-T02)
 Conversation  { id, title, created_at, updated_at }                deny_unknown_fields
 Role          = System | User | Assistant | Tool
 IDs           RequestId, SessionId, ToolName, ConversationId, MessageId   (string newtypes; UUID v7 text, ADR-0004)
@@ -44,13 +44,24 @@ ChatProvider (loki-llm, implemented in P1-T04, ADR-0006). Object-safe: Arc<dyn C
   stream_chat(ChatRequest { messages: Vec<ChatMessage { role, content }>, tools: Vec<ToolSpec> },
               cancel: CancellationToken) -> BoxStream<'static, Result<ChatEvent, LlmError>>
       ChatEvent = Token { text } | ToolCall(ToolCallDraft { tool, arguments }) | Done(Usage { prompt_tokens?, completion_tokens? })
-      LlmError  = Cancelled | Unavailable(msg) | Protocol(msg) | ContextLimit(msg)
+      LlmError  = Cancelled | Unavailable(msg) | ModelMissing(msg) | Protocol(msg) | ContextLimit(msg)
       Protocol: content items, then exactly one terminal item (Ok(Done) or Err), then the stream ends.
                 Cancellation ends it promptly with Err(Cancelled).
   health() -> BoxFuture<ProviderHealth = Ready | Unavailable { reason }>
   context_limit() -> u32 tokens
 
-  MockProvider (tests and the P1 CLI only): scripted from JSON (fixtures/mock_provider/) or `echo()`.
+  MockProvider (tests and `--provider mock`): scripted from JSON (fixtures/mock_provider/) or `echo()`.
+  OllamaProvider (P2-T01): `/api/chat` NDJSON; the HTTP client is injected by loki-runtime::net
+      (loopback IP literal only, no proxy, loopback-only redirects). `think` is set per model from
+      fixtures/models.json (ADR-0010); `thinking` text is always dropped. Tool names are sent unchanged.
+      Health = `/api/version` + the model present in `/api/tags`. Cloud model tags are refused by the runtime.
+
+Agent (loki-agent, P2-T03/T04)
+  build_context(system, history, budget): system prompt (at most half the budget), then the latest
+      user turn (always; truncated with a marker if needed), then the newest turns that fit.
+      Tokens estimated as ceil(chars/4) + 4 per message. Budget = context_limit - reserve.
+  Orchestrator::send / retry / reply over traits ChatStore + IdSource. A stopped reply with text is
+      stored with stopped = true; an empty one is not stored. No tools are offered in P2.
 
 Platform (loki-platform, P3-T07)
   capabilities() -> Map<Capability, CapabilityStatus>

@@ -51,6 +51,12 @@ clap = { version = "4.6", features = ["derive", "env"] }
 anyhow = "1.0"
 ts-rs = { version = "12.0", features = ["serde-json-impl", "no-serde-warnings"] }
 tempfile = "3.27"
+# P2. reqwest: plain HTTP only for now. Every P2 request goes to loopback (Ollama); no TLS stack and
+# no system proxy (`system-proxy` is a default feature, deliberately off). TLS arrives with the
+# P7 internet tools, with an ADR for the rustls crypto provider.
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
+sysinfo = { version = "0.40", default-features = false, features = ["system", "disk"] }
+wiremock = "0.6"
 
 [workspace.lints.rust]
 unsafe_code = "deny"          # FFI modules opt out locally, with a `// SAFETY:` comment per block

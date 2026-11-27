@@ -19,15 +19,18 @@ use serde_json::{Map, Value};
 use crate::error::RuntimeError;
 
 /// The config version this build writes.
-pub const CONFIG_VERSION: u64 = 1;
+pub const CONFIG_VERSION: u64 = 2;
+
+/// Default Ollama endpoint: IPv4 loopback literal, never `localhost` (see `net.rs`).
+pub const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
 
 /// Which model backend to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
-    /// The scripted `MockProvider`. The only provider in P1; replies are labelled as mock.
+    /// The scripted `MockProvider`, for tests and demos. Replies are labelled as mock.
     Mock,
-    /// A local Ollama server (P2). Selecting it before P2 is an error, never a silent fallback.
+    /// A local Ollama server (P2). The default for new configs from version 2.
     Ollama,
 }
 
@@ -78,18 +81,54 @@ pub struct Config {
     pub retention: Retention,
     /// Wake word enabled (P4). Off by default.
     pub wake_word: bool,
+    /// Ollama connection (version 2).
+    pub ollama: OllamaConfig,
+    /// Context window sizing (version 2).
+    pub context: ContextConfig,
+}
+
+/// How to reach the local Ollama server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OllamaConfig {
+    /// Base URL. In `local_only` mode it must be a loopback IP literal (checked in `net.rs`).
+    pub base_url: String,
+}
+
+/// Context window sizing, passed to the provider and used by the agent's context budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContextConfig {
+    /// Context window to request from the model (Ollama `num_ctx`). 4096 matches what Ollama
+    /// picks on an 8 GB Apple M2 (P0-T03) and bounds memory use.
+    pub tokens: u32,
+    /// Tokens kept free for the reply. The prompt budget is `tokens - reserve_tokens`.
+    pub reserve_tokens: u32,
+}
+
+impl Default for ContextConfig {
+    fn default() -> Self {
+        Self {
+            tokens: 4_096,
+            reserve_tokens: 1_024,
+        }
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             version: CONFIG_VERSION,
-            provider: ProviderKind::Mock,
+            provider: ProviderKind::Ollama,
             model_id: None,
             allowed_roots: Vec::new(),
             network_mode: NetworkMode::LocalOnly,
             retention: Retention::default(),
             wake_word: false,
+            ollama: OllamaConfig {
+                base_url: String::from(DEFAULT_OLLAMA_URL),
+            },
+            context: ContextConfig::default(),
         }
     }
 }
@@ -107,20 +146,39 @@ pub struct LoadedConfig {
 type MigrationStep = fn(Map<String, Value>) -> Result<Map<String, Value>, String>;
 
 /// `MIGRATIONS[n]` migrates version `n` to `n + 1`. Append only.
-const MIGRATIONS: &[MigrationStep] = &[migrate_v0_to_v1];
+const MIGRATIONS: &[MigrationStep] = &[migrate_v0_to_v1, migrate_v1_to_v2];
 
 /// Version 0 is a file without a `version` field (hand-written, or from a pre-release build).
-/// Missing fields take their defaults; present fields are kept as they are.
+/// Missing fields take the **version 1** defaults (frozen here, never `Config::default()`, which
+/// moves on); present fields are kept as they are.
 fn migrate_v0_to_v1(old: Map<String, Value>) -> Result<Map<String, Value>, String> {
-    let defaults = serde_json::to_value(Config::default()).map_err(|error| error.to_string())?;
-    let Value::Object(mut merged) = defaults else {
-        return Err(String::from("default config is not an object"));
+    let Value::Object(mut merged) = serde_json::json!({
+        "version": 1,
+        "provider": "mock",
+        "model_id": null,
+        "allowed_roots": [],
+        "network_mode": "local_only",
+        "retention": { "history_days": null },
+        "wake_word": false
+    }) else {
+        return Err(String::from("v1 defaults are not an object"));
     };
     for (key, value) in old {
         merged.insert(key, value);
     }
     merged.insert(String::from("version"), Value::from(1_u64));
     Ok(merged)
+}
+
+/// Version 2 (P2) adds `ollama` and `context`. The chosen `provider` is kept: a P1 config that
+/// says `mock` stays `mock` until the user switches.
+fn migrate_v1_to_v2(mut old: Map<String, Value>) -> Result<Map<String, Value>, String> {
+    old.entry("ollama")
+        .or_insert_with(|| serde_json::json!({ "base_url": DEFAULT_OLLAMA_URL }));
+    old.entry("context")
+        .or_insert_with(|| serde_json::json!({ "tokens": 4096, "reserve_tokens": 1024 }));
+    old.insert(String::from("version"), Value::from(2_u64));
+    Ok(old)
 }
 
 /// Loads the config at `path`, creating, migrating or repairing it as described in the module docs.
@@ -395,6 +453,45 @@ mod tests {
             "{error:?}"
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), future);
+    }
+
+    #[test]
+    fn version_1_file_from_p1_is_migrated_to_v2_keeping_the_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = config_path(&dir);
+        // Byte-for-byte what a P1 build wrote by default.
+        let v1 = r#"{
+  "version": 1,
+  "provider": "mock",
+  "model_id": null,
+  "allowed_roots": [],
+  "network_mode": "local_only",
+  "retention": { "history_days": null },
+  "wake_word": false
+}
+"#;
+        fs::write(&path, v1).unwrap();
+        let loaded = load_or_init(&path).unwrap();
+        assert_eq!(loaded.config.version, 2);
+        assert_eq!(
+            loaded.config.provider,
+            ProviderKind::Mock,
+            "explicit choice kept"
+        );
+        assert_eq!(loaded.config.ollama.base_url, DEFAULT_OLLAMA_URL);
+        assert_eq!(loaded.config.context, ContextConfig::default());
+        assert_eq!(
+            fs::read_to_string(path.with_file_name("config.json.v1.bak")).unwrap(),
+            v1
+        );
+    }
+
+    #[test]
+    fn new_configs_default_to_ollama_on_loopback() {
+        let config = Config::default();
+        assert_eq!(config.provider, ProviderKind::Ollama);
+        assert_eq!(config.ollama.base_url, "http://127.0.0.1:11434");
+        assert!(config.context.reserve_tokens < config.context.tokens);
     }
 
     #[test]

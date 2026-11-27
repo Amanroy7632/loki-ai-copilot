@@ -8,10 +8,10 @@
 
 | | |
 | --- | --- |
-| **Current phase** | P1: Foundation ([phase file](phases/P01-foundation.md)). **P0 was skipped on the owner's instruction** (2026-11-27); its gate has not passed. |
-| **Next ticket** | **P1-T01 / P1-T03 / P1-T09 CI verification**: push to a GitHub remote and confirm CI is green on all three OSs (blocked, see Blockers). Then the P1 gate, then P0 remainder or P2 as the owner decides. |
+| **Current phase** | P2: Local chat ([phase file](phases/P02-local-chat.md)), started on the owner's instruction while the P0 and P1 gates are still open (2026-11-27). |
+| **Next ticket** | **P2 gate**: the offline test (needs the owner to turn networking off), `docs/benchmarks/p2-inference.md`, and the P2-T05 real pull-with-cancel demo. CI verification for P1-T01/T03/T09 is still blocked (no git or remote). |
 | **Last gate passed** | none |
-| **Reference OS** | undecided, see D-01 (the dev machine is macOS 27 on an Apple M2 with 8 GB, `docs/p0/environment.md`) |
+| **Reference OS** | **macOS** (Apple Silicon first), ADR-0003 |
 
 ## Phase progress
 
@@ -19,13 +19,14 @@
 | --- | --- |
 | P0 Feasibility | in progress (resumed by the owner after P1 was written). P0-T01 done; the spikes, ADR-0003 and the full license review are not. |
 | P1 Foundation | code complete; **all checks pass locally on macOS**; CI not yet run anywhere. Gate not passed. |
-| P2–P11 | not started |
+| P2 Local chat | code complete; all checks pass locally (161 tests); manual chat against real Ollama recorded. Gate not passed (see Next ticket). |
+| P3–P11 | not started |
 
 ## P0 tickets
 
 - [x] P0-T01 Toolchain, versions, and a building scaffold (`docs/p0/environment.md`)
-- [ ] P0-T02 Reference OS decision (ADR-0003)
-- [ ] P0-T03 Local inference spike (Ollama + tool calling)
+- [x] P0-T02 Reference OS decision: **macOS** (ADR-0003, owner decision)
+- [x] P0-T03 Local inference spike (Ollama + tool calling): `spikes/ollama/`, `docs/p0/inference.md`, ADR-0009
 - [ ] P0-T04 Audio and STT spike (CPAL + whisper.cpp)
 - [ ] P0-T05 Tauri 2 shell and packaging spike
 - [ ] P0-T06 Native permissions and app-discovery spike
@@ -44,6 +45,16 @@
 - [x] P1-T07 Logging and redaction
 - [x] P1-T08 CLI mock chat
 - [ ] P1-T09 CI and supply chain: workflow + `deny.toml` written; `cargo deny check` passes locally and was shown to fail on a disallowed license and on a vulnerable crate. *CI not run.*
+
+## P2 tickets
+
+- [x] P2-T01 Ollama adapter (`loki-llm::ollama`): 12 wiremock tests (streaming, tool call, malformed line, missing `done`, error line, model missing, server down, health, pull) + manual run against Ollama 0.40.18. reqwest without TLS (all P2 traffic is loopback); rustls arrives with P7.
+- [x] P2-T02 Cancellation: the stream ends < 200 ms after cancel mid-body (raw stalling-server test); a partial reply is stored with `stopped = true` (migration 0002); `/retry` replaces it
+- [x] P2-T03 Context budget (`loki-agent::context`): trimming order, oversized message truncated with a marker, empty history
+- [x] P2-T04 Orchestrator v1 over `ChatStore` + `IdSource` traits; tests with MockProvider and an in-memory store
+- [ ] P2-T05 Model onboarding: `loki models recommend/list/pull/use`, allowlist with licenses (ADR-0010), RAM-tier tests, license prompt before pull. *Pull-with-cancel against a real download not demonstrated yet* (it downloads GBs; owner to confirm)
+- [x] P2-T06 Network policy (`loki-runtime::net`): loopback IP literals only for local services, loopback-only redirects (SEC-07 test), no proxy, and a test that no other crate builds an HTTP client
+- [x] P2-T07 CLI: `--provider ollama|mock`, `--model`, `/stop`, `/retry`, `/model`, health at startup; manual session recorded in the progress log
 
 ## Open decisions
 
@@ -71,6 +82,8 @@
 
 Newest first. Format: `YYYY-MM-DD | ticket | what changed | commands run → result`.
 
+- 2026-11-27 | P2-T01..T07 | Ollama adapter, cancellation with partial save (migration 0002 + pre-migration backup), context budget, orchestrator, model onboarding, network policy, CLI. Config v2 (Ollama URL, context sizes; v1→v2 migration keeps the provider). New installs default to `ollama`. **Default model changed to bonsai-2:4b (ADR-0010, supersedes ADR-0009)**: qwen3:4b leaked its reasoning into replies with `think: false`; thinking is now per model. | `./scripts/check.sh` → all passed, 161 tests, cargo deny ok. Manual: `loki models recommend` → bonsai-2:4b; `loki models use bonsai-2:4b`; `loki chat` → clean one-sentence answers (bonsai about 2 s), `/model qwen3:4b` switched mid-session with clean output; `history show` correct; 0 rows contain `</think>`.
+- 2026-11-27 | P0-T03 | Rust spike `spikes/ollama` (reqwest, no proxy) against Ollama 0.40.18 with `OLLAMA_NO_CLOUD=1`. Models qwen3:4b and bonsai-2:4b (both Apache-2.0, verified with `ollama show --license`). Default model qwen3:4b (ADR-0009); allowlist `fixtures/models.json`. A first Python version was stopped on owner request (spikes are Rust). | `ollama-spike qwen3:4b` → 30 tok/s, 0.08 s warm first token, 3.2 GB, tools 20/20, false positives 0/10; `ollama-spike bonsai-2:4b` → 21 tok/s, 1.9 GB, tools 20/20; server log shows `stop: cancel task` on client disconnect.
 - 2026-11-27 | P0-T01 | Installed Ollama 0.40.18 (`brew install ollama`; no service registered, not running). Checked the Tauri 2 macOS prerequisites against the official docs: all present (Xcode 26.6, CLT, Rust 1.97.1, Node 24 LTS). `docs/p0/environment.md` completed. | `cargo fmt --check` → ok; `cargo clippy --workspace --all-targets -- -D warnings` → 0 warnings; `cargo test --workspace` → 98 passed, 0 failed.
 - 2026-11-27 | P1-T09 | `.github/workflows/ci.yml` (fmt, clippy incl. `ts` feature, test on 3 OSs with `--locked`, rust-cache; contracts job; cargo-deny job), `deny.toml`, `check.sh`/`check.ps1` extended. No `tests/` crate needed yet. | `cargo deny check` → `advisories ok, bans ok, licenses ok, sources ok`. Negative checks: removing the `option-ext` exception → `licenses FAILED` (MPL-2.0 rejected, exit 4); scratch crate with `smallvec = "=0.6.13"` + our `deny.toml` → `advisories FAILED` (RUSTSEC-2021-0003, exit 1). CI **not run**.
 - 2026-11-27 | P1-T08 | `loki chat [--conversation]`, `history list`, `history show`, global `--data-dir`; REPL with `/retry`, `/quit`, `/help`; Ctrl+C cancels the reply only. Turn logic in `loki-agent::stream_reply`; `Runtime` API in `loki-runtime`. | `cargo test -p loki-cli` → 7 passed (5 consecutive runs), incl. persistence across restarts and a real SIGINT test (Unix only).

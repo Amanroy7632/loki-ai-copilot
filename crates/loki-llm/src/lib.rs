@@ -24,10 +24,12 @@
 
 pub mod error;
 pub mod mock;
+pub mod ollama;
 pub mod provider;
 
 pub use error::LlmError;
 pub use mock::{MockErrorKind, MockProvider, MockScript, MockScriptError, MockStep};
+pub use ollama::{InstalledModel, OllamaApi, OllamaProvider, PullProgress};
 pub use provider::{
     ChatEvent, ChatMessage, ChatProvider, ChatRequest, ChatStream, ProviderHealth, ToolCallDraft,
     Usage,

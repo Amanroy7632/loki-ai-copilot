@@ -3,10 +3,11 @@
 //! This lets every layer (provider, memory, tools, policy, voice) be exercised without the
 //! desktop UI. It is also how CI and coding agents run end-to-end checks.
 //!
-//! Commands (P1-T08): `loki chat [--conversation <id>]`, `loki history list`,
-//! `loki history show <id>`. Every command accepts `--data-dir`, so tests never touch real user
-//! data. All behaviour lives in `loki-runtime`; this file only parses input and prints output.
+//! Commands: `loki chat [--conversation <id>]`, `loki history list|show <id>`,
+//! `loki models recommend|list|pull <id>|use <id>`. Global: `--data-dir`, `--provider`, `--model`.
+//! All behaviour lives in `loki-runtime`; this crate only parses input and prints output.
 
+mod models;
 mod repl;
 
 use std::path::PathBuf;
@@ -14,18 +15,18 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::Context as _;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use loki_core::ConversationId;
-use loki_runtime::{Runtime, RuntimeOptions};
+use loki_runtime::{ProviderKind, Runtime, RuntimeOptions};
 
-/// Delay between mock tokens, so streaming and Ctrl+C are observable in P1.
+/// Delay between mock tokens, so streaming and Ctrl+C are observable with `--provider mock`.
 const MOCK_TOKEN_DELAY: Duration = Duration::from_millis(40);
 
 #[derive(Debug, Parser)]
 #[command(
     name = "loki",
     version,
-    about = "Loki headless harness (P1: mock provider only)"
+    about = "Loki headless harness: local chat over Ollama (or a mock)"
 )]
 struct Cli {
     /// Use this directory for data, config and logs instead of the per-user default.
@@ -33,13 +34,29 @@ struct Cli {
     #[arg(long, global = true, value_name = "DIR")]
     data_dir: Option<PathBuf>,
 
+    /// Model backend for this run (default: from config, `ollama` for new installs).
+    #[arg(long, global = true, value_enum)]
+    provider: Option<ProviderArg>,
+
+    /// Model for this run, e.g. `qwen3:4b` (default: from config).
+    #[arg(long, global = true, value_name = "ID")]
+    model: Option<String>,
+
     #[command(subcommand)]
     command: Command,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ProviderArg {
+    /// Local Ollama server (loopback only).
+    Ollama,
+    /// Scripted echo replies, for tests and demos. Replies are labelled as mock.
+    Mock,
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Chat in a REPL. Ctrl+C stops the current reply; `/retry` regenerates it; `/quit` exits.
+    /// Chat in a REPL. Ctrl+C or /stop stops a reply; /retry regenerates it; /quit exits.
     Chat {
         /// Continue an existing conversation instead of starting a new one.
         #[arg(long, value_name = "ID")]
@@ -49,6 +66,11 @@ enum Command {
     History {
         #[command(subcommand)]
         command: HistoryCommand,
+    },
+    /// Choose, download and select local models (Ollama).
+    Models {
+        #[command(subcommand)]
+        command: models::ModelsCommand,
     },
 }
 
@@ -75,9 +97,20 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
+    // `history` and `models` never talk to the chat provider, so they must work even when no
+    // model is chosen yet: open them with the mock provider.
+    let chat = matches!(cli.command, Command::Chat { .. });
+    let provider = match cli.provider {
+        Some(ProviderArg::Ollama) => Some(ProviderKind::Ollama),
+        Some(ProviderArg::Mock) => Some(ProviderKind::Mock),
+        None if chat => None,
+        None => Some(ProviderKind::Mock),
+    };
     // Opening is blocking (files, SQLite), so it happens before the async runtime starts.
-    let runtime = Runtime::open(RuntimeOptions {
+    let mut runtime = Runtime::open(RuntimeOptions {
         data_dir: cli.data_dir,
+        provider,
+        model: cli.model,
         mock_token_delay: MOCK_TOKEN_DELAY,
         init_logging: true,
     })
@@ -93,7 +126,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     executor.block_on(async {
         match cli.command {
             Command::Chat { conversation } => {
-                repl::run(&runtime, conversation.map(ConversationId::new)).await
+                repl::run(&mut runtime, conversation.map(ConversationId::new)).await
             }
             Command::History {
                 command: HistoryCommand::List,
@@ -101,6 +134,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             Command::History {
                 command: HistoryCommand::Show { id },
             } => history_show(&runtime, &ConversationId::new(id)).await,
+            Command::Models { command } => models::run(&mut runtime, command).await,
         }
     })
 }
@@ -120,7 +154,8 @@ async fn history_show(runtime: &Runtime, id: &ConversationId) -> anyhow::Result<
     let conversation = runtime.conversation(id).await?;
     println!("# {} ({})", conversation.title, conversation.id);
     for message in runtime.messages(id).await? {
-        println!("[{}] {}", message.role.as_str(), message.content);
+        let stopped = if message.stopped { " [stopped]" } else { "" };
+        println!("[{}]{stopped} {}", message.role.as_str(), message.content);
     }
     Ok(())
 }

@@ -2,7 +2,7 @@
 //!
 //! Composition root: configuration, paths, job scheduling, lifecycle and dependency wiring.
 //!
-//! **Status:** P1-T06 (paths, versioned config), P1-T07 (logging, redaction) and the P1-T08
+//! **Status:** P1-T06..T08 plus P2-T05 (model onboarding), P2-T06 (network policy) and the P2 wiring of the$
 //! [`Runtime`] API are implemented. Next tickets: P2-T06 (network policy), P3-T04 (jobs),
 //! P5-T02 (Tauri API).
 //!
@@ -28,6 +28,8 @@ pub mod config;
 pub mod error;
 pub mod ids;
 pub mod logging;
+pub mod models;
+pub mod net;
 pub mod paths;
 pub mod redact;
 
@@ -35,5 +37,6 @@ pub use app::{ReplyOutcome, Runtime, RuntimeOptions};
 pub use config::{Config, NetworkMode, ProviderKind};
 pub use error::RuntimeError;
 pub use loki_llm::CancellationToken;
+pub use loki_llm::{ProviderHealth, PullProgress};
 pub use paths::{DATA_DIR_ENV, Paths};
 pub use redact::{Redactor, redact};

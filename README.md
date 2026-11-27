@@ -2,8 +2,8 @@
 
 Loki is a local-first, voice-enabled personal copilot. It talks with you, remembers what you allow it to, researches the web when you opt in, and runs **approved** actions on your own devices. By default it needs no cloud account and runs no remote inference.
 
-> **Status:** project scaffold and plan only. Phase **P0 (feasibility)** has not started.
-> The Rust scaffold was written on a machine without a Rust toolchain, so it has **not been compiled yet**. That is the first task in P0 (see [docs/STATUS.md](docs/STATUS.md)).
+> **Status:** P2 (local chat through Ollama) is written and passes all checks locally; P1 and P2 gates are still open.
+> P0: T01 and T03 done. Nothing is committed yet (the .git folder is broken). See [docs/STATUS.md](docs/STATUS.md).
 
 ## What Loki is, and is not
 
@@ -15,6 +15,58 @@ Loki is a local-first, voice-enabled personal copilot. It talks with you, rememb
 | Search the web with cited sources, after you opt in | Make purchases or destructive changes unattended |
 | Live in the tray or menu bar, keep reminders, keep an audit history | Get around OS security (UAC, macOS privacy prompts, Wayland) |
 | Pair a phone to your desktop securely | Run as a public, multi-user cloud service |
+
+## Getting started (macOS, today)
+
+What works right now: the `loki` CLI chatting with a **local model through Ollama**, with
+streaming, stop, retry and saved history. It works fully offline once a model is downloaded and
+never uses cloud inference. Tools, voice and the desktop app come in later phases.
+
+### 1. One-time setup
+
+```sh
+xcode-select --install                         # if Xcode / Command Line Tools are missing
+brew install ollama                            # local model server
+cargo install --path crates/loki-cli --locked  # the `loki` command, into ~/.cargo/bin
+```
+
+### 2. Start Ollama (loopback only, cloud features off)
+
+```sh
+./scripts/ollama-serve.sh      # leave this terminal running
+```
+
+Don't use `brew services start ollama` or the Ollama app if you want Loki's privacy settings;
+those run with cloud features **on** by default.
+
+### 3. Pick and download a model
+
+```sh
+loki models recommend          # checks RAM/disk, suggests a reviewed model (8 GB Mac: bonsai-2:4b)
+loki models pull bonsai-2:4b   # shows the license first, then downloads (~1.6 GB; Ctrl+C cancels)
+loki models use bonsai-2:4b    # saves it as your default
+```
+
+### 4. Chat
+
+```sh
+loki chat                        # Ctrl+C or /stop stops a reply, /retry regenerates, /quit exits
+                                 # /model shows the model, /model qwen3:4b switches for this session
+loki history list                # saved conversations: <id>  <title>
+loki history show <id>           # every message (stopped replies are marked [stopped])
+loki chat --conversation <id>    # continue one
+loki --provider mock chat        # no model needed: canned echo replies, for testing
+```
+
+Your data lives in `~/Library/Application Support/Loki/` (`loki.db`, `config/config.json`,
+`logs/`). Logs are redacted; `LOKI_LOG=debug` makes them chattier. `--data-dir <dir>` (or
+`LOKI_DATA_DIR`) uses a separate folder, e.g. for experiments.
+
+### 5. Before you commit
+
+```sh
+./scripts/check.sh               # fmt, clippy, tests, contracts, tsc, cargo deny
+```
 
 ## Start here
 
@@ -29,7 +81,7 @@ loki/
   CLAUDE.md              points Claude Code at AGENTS.md
   SECURITY.md            how to report issues; summary of the trust model
   Cargo.toml             Rust workspace, shared dependency versions and lints
-  rust-toolchain.toml    pinned Rust toolchain (exact version pinned in P0-T01)
+  rust-toolchain.toml    pinned Rust toolchain (1.97.1)
   pnpm-workspace.yaml    JS workspace (desktop app + shared UI, from P5)
   crates/
     loki-core/           domain types and contracts; no OS, UI, IO or async
@@ -51,7 +103,7 @@ loki/
   fixtures/              test data (fake documents, scripted model replies)
   tests/                 cross-crate integration and security tests
   spikes/                throwaway P0 experiments, outside the workspace
-  scripts/               check.sh / check.ps1 (fmt + clippy + test)
+  scripts/               check.sh / check.ps1, gen-contracts.sh, ollama-serve.sh
   docs/                  the plan, architecture, contracts, phases, ADRs
 ```
 

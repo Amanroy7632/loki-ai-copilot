@@ -29,4 +29,9 @@ content: string,
 /**
  * When it was stored, UTC.
  */
-created_at: UnixMillis, };
+created_at: UnixMillis, 
+/**
+ * `true` when generation was stopped by the user before the model finished (P2-T02).
+ * The content is then partial. Always `false` for non-assistant messages.
+ */
+stopped: boolean, };

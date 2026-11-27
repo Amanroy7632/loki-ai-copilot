@@ -15,6 +15,7 @@ loki-core.workspace = true
 loki-runtime.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+futures.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync"] }
 
 [dev-dependencies]

@@ -88,14 +88,15 @@ impl Database {
             ));
         }
         tx.execute(
-            "INSERT INTO messages (id, conversation_id, role, content, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO messages (id, conversation_id, role, content, created_at, stopped) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 message.id.as_str(),
                 message.conversation_id.as_str(),
                 message.role.as_str(),
                 message.content,
-                message.created_at.0
+                message.created_at.0,
+                message.stopped
             ],
         )?;
         tx.commit()?;
@@ -108,7 +109,7 @@ impl Database {
         conversation: &ConversationId,
     ) -> Result<Vec<Message>, MemoryError> {
         let mut statement = self.conn.prepare(
-            "SELECT id, conversation_id, role, content, created_at FROM messages \
+            "SELECT id, conversation_id, role, content, created_at, stopped FROM messages \
              WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC",
         )?;
         let rows = statement.query_map(params![conversation.as_str()], |row| {
@@ -118,11 +119,12 @@ impl Database {
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, i64>(4)?,
+                row.get::<_, bool>(5)?,
             ))
         })?;
         let mut messages = Vec::new();
         for row in rows {
-            let (id, conversation_id, role, content, created_at) = row?;
+            let (id, conversation_id, role, content, created_at, stopped) = row?;
             let role = Role::parse(&role).ok_or_else(|| MemoryError::Corrupt {
                 table: "messages",
                 detail: String::from("unknown role"),
@@ -133,6 +135,7 @@ impl Database {
                 role,
                 content,
                 created_at: UnixMillis(created_at),
+                stopped,
             });
         }
         Ok(messages)

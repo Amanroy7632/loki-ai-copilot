@@ -34,7 +34,8 @@ CREATE TABLE messages (
   conversation_id  TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   role             TEXT NOT NULL CHECK (role IN ('system','user','assistant','tool')),
   content          TEXT NOT NULL,
-  created_at       INTEGER NOT NULL
+  created_at       INTEGER NOT NULL,
+  stopped          INTEGER NOT NULL DEFAULT 0 CHECK (stopped IN (0, 1))   -- 0002, P2-T02
 );
 CREATE INDEX idx_messages_conversation ON messages(conversation_id, created_at);
 CREATE TABLE settings (
@@ -131,5 +132,6 @@ or a `roots` table if needed, and the model never sees absolute paths.
   limitations, for example OS backups (Time Machine, File History) and WAL checkpoints.
   Run `VACUUM` after bulk deletes.
 - Consider an encrypted database (SQLCipher) for sensitive deployments. That needs an ADR.
-- Recovery: back the DB up before applying migrations, and test restoring from that backup.
-  **Not implemented yet** (only `0001` exists); required before the first `0002` migration ships.
+- Recovery: before migrating an existing DB, `Database::open` copies it to `loki.db.bak-v<old version>`
+  with `VACUUM INTO` (tested: the backup holds the pre-migration data at the old version). Restoring is
+  manual for now: replace `loki.db` with the backup while Loki is closed.

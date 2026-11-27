@@ -2,7 +2,7 @@
 //!
 //! Agent orchestration: context building and the model <-> tool loop.
 //!
-//! **Status:** P1-T08 added [`turn::stream_reply`], which consumes one reply stream (no tools).
+//! **Status:** P2-T03 (context budget) and P2-T04 (orchestrator v1, no tools) implemented.
 //! Tickets that fill this crate in: P2-T04 (chat loop), P3-T05 (tool loop), P7-T04 (memory retrieval).
 //!
 //! ## Responsibilities
@@ -22,6 +22,13 @@
 //!
 //! `loki-core`, `loki-llm`, `loki-tools`, `loki-policy`, `loki-memory`. Adding another edge needs an ADR (see `docs/ARCHITECTURE.md`).
 
+pub mod context;
+pub mod orchestrator;
 pub mod turn;
 
+pub use context::{BuiltContext, ContextBudget, build_context, estimate_tokens};
+pub use orchestrator::{
+    AgentError, ChatStore, DEFAULT_SYSTEM_PROMPT, IdSource, Orchestrator, StoreError,
+    TOOLS_UNAVAILABLE_REPLY, TurnResult,
+};
 pub use turn::{TurnOutcome, stream_reply};

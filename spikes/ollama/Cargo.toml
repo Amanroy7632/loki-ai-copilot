@@ -1,0 +1,20 @@
+# P0-T03 throwaway spike. NOT a workspace member (the root Cargo.toml excludes `spikes`),
+# never imported by product code. Production code is rewritten properly in P2.
+[package]
+name = "ollama-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Empty table: this crate is its own workspace root, independent of the Loki workspace.
+[workspace]
+
+[dependencies]
+# Plain HTTP to loopback only: no TLS, and no system proxy (a proxy must never see local traffic).
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "time"] }
+tokio-util = "0.7"
+futures-util = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"

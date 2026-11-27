@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "reviewed": "2026-11-27 (P0-T03 spike + P2 manual chat check, ADR-0010)",
+  "models": [
+    {
+      "id": "bonsai-2:4b",
+      "display_name": "Bonsai 2 4B (ternary)",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "download_bytes": 1600000000,
+      "loaded_bytes": 1715669563,
+      "min_ram_gb": 6,
+      "tool_calls_verified": true,
+      "think": false,
+      "evidence": "spikes/ollama/README.md: 20/20 well-formed tool calls, 21 tok/s, clean replies with think=false (about 2 s for a one-sentence answer) on M2 8 GB",
+      "notes": "Default. Fast, clean replies, about 1.9 GB in memory. Needs Ollama 0.40.6 or later."
+    },
+    {
+      "id": "qwen3:4b",
+      "display_name": "Qwen3 4B",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "download_bytes": 2500000000,
+      "loaded_bytes": 3181631242,
+      "min_ram_gb": 8,
+      "tool_calls_verified": true,
+      "think": true,
+      "evidence": "spikes/ollama/README.md: 20/20 well-formed tool calls, 30 tok/s on M2 8 GB",
+      "notes": "Thinks before answering (about 10 s before the reply appears). With think=false, Ollama 0.40.18 leaks its reasoning into the reply, so Loki always runs it with thinking on."
+    },
+    {
+      "id": "qwen3:8b",
+      "display_name": "Qwen3 8B",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "download_bytes": 5200000000,
+      "loaded_bytes": null,
+      "min_ram_gb": 16,
+      "tool_calls_verified": false,
+      "think": true,
+      "evidence": null,
+      "notes": "Candidate for 16 GB. Not measured; not recommended until verified."
+    }
+  ]
+}

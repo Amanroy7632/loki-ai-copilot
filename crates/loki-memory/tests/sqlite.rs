@@ -21,6 +21,7 @@ fn message(id: &str, conversation: &str, role: Role, content: &str, at: i64) -> 
         role,
         content: content.into(),
         created_at: UnixMillis(at),
+        stopped: false,
     }
 }
 
@@ -41,7 +42,7 @@ fn migrations_apply_to_an_empty_db() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&db_path(&dir)).unwrap();
     assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 1);
+    assert_eq!(SCHEMA_VERSION, 2);
     let tables = table_names(&db);
     for expected in ["conversations", "messages", "settings"] {
         assert!(
@@ -302,4 +303,96 @@ fn source_never_formats_sql() {
         offenders.is_empty(),
         "string formatting in loki-memory: {offenders:?}"
     );
+}
+
+/// Builds a database exactly as a P1 build left it: only 0001 applied, user_version = 1.
+fn create_v1_db(path: &Path) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute_batch(include_str!("../../../migrations/0001_init.sql"))
+        .unwrap();
+    conn.pragma_update(None, "user_version", 1).unwrap();
+    conn.execute(
+        "INSERT INTO conversations (id, title, created_at, updated_at) VALUES ('c1', 'old', 1, 2)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, created_at) \
+         VALUES ('m1', 'c1', 'assistant', 'from P1', 2)",
+        [],
+    )
+    .unwrap();
+}
+
+#[test]
+fn migrations_apply_to_a_db_at_the_previous_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = db_path(&dir);
+    create_v1_db(&path);
+
+    let db = Database::open(&path).unwrap();
+    assert_eq!(db.schema_version().unwrap(), 2);
+    let messages = db.list_messages(&ConversationId::new("c1")).unwrap();
+    assert_eq!(messages.len(), 1);
+    assert!(!messages[0].stopped, "existing rows default to not stopped");
+}
+
+#[test]
+fn existing_db_is_backed_up_before_migrating() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = db_path(&dir);
+    create_v1_db(&path);
+    drop(Database::open(&path).unwrap());
+
+    let backup = loki_memory::db::backup_path(&path, 1);
+    assert!(backup.is_file(), "missing {}", backup.display());
+    let conn = rusqlite::Connection::open(&backup).unwrap();
+    let version: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 1, "the backup is the pre-migration database");
+    let content: String = conn
+        .query_row("SELECT content FROM messages WHERE id = 'm1'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(content, "from P1");
+
+    // Re-opening a current DB makes no new backup.
+    drop(Database::open(&path).unwrap());
+    let backups = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".bak-v")
+        })
+        .count();
+    assert_eq!(backups, 1);
+}
+
+#[test]
+fn new_db_gets_no_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = db_path(&dir);
+    drop(Database::open(&path).unwrap());
+    assert!(!loki_memory::db::backup_path(&path, 0).exists());
+    assert!(!loki_memory::db::backup_path(&path, 1).exists());
+}
+
+#[test]
+fn stopped_flag_round_trips() {
+    let mut db = Database::open_in_memory().unwrap();
+    db.create_conversation(&ConversationId::new("c1"), "t", UnixMillis(1))
+        .unwrap();
+    let mut partial = message("m1", "c1", Role::Assistant, "half an ans", 2);
+    partial.stopped = true;
+    db.append_message(&partial).unwrap();
+    db.append_message(&message("m2", "c1", Role::User, "go on", 3))
+        .unwrap();
+    let stored = db.list_messages(&ConversationId::new("c1")).unwrap();
+    assert!(stored[0].stopped);
+    assert!(!stored[1].stopped);
 }
