@@ -37,6 +37,24 @@ pub enum TaskState {
 }
 
 impl TaskState {
+    /// The stable snake_case name (same as serde), used as the `tasks.state` column value.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::AwaitingApproval => "awaiting_approval",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Interrupted => "interrupted",
+        }
+    }
+
+    /// Parses [`TaskState::as_str`]. `None` for anything else.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|state| state.as_str() == value)
+    }
+
     /// Every state, for exhaustive tests and UI legends.
     pub const ALL: [Self; 7] = [
         Self::Queued,
@@ -117,6 +135,15 @@ mod tests {
     fn running_cannot_go_back_to_approval() {
         assert!(!TaskState::Running.can_transition_to(TaskState::AwaitingApproval));
         assert!(!TaskState::Running.can_transition_to(TaskState::Queued));
+    }
+
+    #[test]
+    fn as_str_matches_serde_and_parses_back() {
+        for state in TaskState::ALL {
+            assert_eq!(serde_json::to_value(state).unwrap(), state.as_str());
+            assert_eq!(TaskState::parse(state.as_str()), Some(state));
+        }
+        assert_eq!(TaskState::parse("done"), None);
     }
 
     #[test]

@@ -16,16 +16,20 @@
 
 pub mod capability;
 pub mod decision;
+pub mod grant;
 pub mod ids;
 pub mod message;
+pub mod network;
 pub mod task;
 pub mod time;
 pub mod tool;
 
 pub use capability::{Capability, CapabilityStatus};
 pub use decision::Decision;
-pub use ids::{ConversationId, MessageId, RequestId, SessionId, ToolName};
+pub use grant::{ANY_SCOPE, Grant};
+pub use ids::{ApprovalId, ConversationId, MessageId, RequestId, SessionId, TaskId, ToolName};
 pub use message::{Conversation, Message, Role};
+pub use network::NetworkMode;
 pub use task::TaskState;
 pub use time::UnixMillis;
 pub use tool::{ErrorCode, Risk, ToolRequest, ToolResult, ToolSpec, ToolStatus};

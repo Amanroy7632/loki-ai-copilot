@@ -23,11 +23,13 @@
 //!
 //! `loki-core`. Adding another edge needs an ADR (see `docs/ARCHITECTURE.md`).
 
+pub mod audit;
 pub mod conversations;
 pub mod db;
 pub mod error;
 pub mod store;
 
+pub use audit::{ConsumedApprovalRow, TaskRow, ToolRunFilter, ToolRunRow};
 pub use db::{Database, SCHEMA_VERSION};
 pub use error::MemoryError;
 pub use store::MemoryStore;

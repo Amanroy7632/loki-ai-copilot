@@ -27,16 +27,40 @@ pub type ChatStream = BoxStream<'static, Result<ChatEvent, LlmError>>;
 pub struct ChatMessage {
     /// Who wrote it.
     pub role: Role,
-    /// The text content.
+    /// The text content. For `Role::Tool` it is the wrapped, untrusted tool result.
     pub content: String,
+    /// Tool calls the assistant made in this message (P3 tool loop). Empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCallDraft>,
+    /// For `Role::Tool`: which tool produced the result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
 }
 
 impl ChatMessage {
-    /// Convenience constructor used by context building and tests.
+    /// A plain message.
     pub fn new(role: Role, content: impl Into<String>) -> Self {
         Self {
             role,
             content: content.into(),
+            tool_calls: Vec::new(),
+            tool_name: None,
+        }
+    }
+
+    /// The assistant's message that proposed `calls` (sent back so the model sees its own calls).
+    pub fn assistant_tool_calls(text: impl Into<String>, calls: Vec<ToolCallDraft>) -> Self {
+        Self {
+            tool_calls: calls,
+            ..Self::new(Role::Assistant, text)
+        }
+    }
+
+    /// A tool result. `content` must already be wrapped as untrusted data by the agent.
+    pub fn tool_result(tool: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            tool_name: Some(tool.into()),
+            ..Self::new(Role::Tool, content)
         }
     }
 }
@@ -54,7 +78,7 @@ pub struct ChatRequest {
 ///
 /// It is only a draft: the agent assigns the request ID, session and deadline to make a
 /// [`loki_core::ToolRequest`], and then validation and policy decide whether it ever runs.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolCallDraft {
     /// The tool the model asked for. It may not exist; the registry checks.

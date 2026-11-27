@@ -27,6 +27,18 @@ pub enum MemoryError {
         /// What was wrong.
         detail: String,
     },
+    /// No task has this ID.
+    #[error("task {0} not found")]
+    TaskNotFound(String),
+    /// The requested state change isn't legal (`TaskState::can_transition_to`), or the task
+    /// changed state concurrently.
+    #[error("illegal task transition {from} -> {to}")]
+    IllegalTransition {
+        /// Current state.
+        from: &'static str,
+        /// Requested state.
+        to: &'static str,
+    },
     /// The connection lock was poisoned by a panic in another thread.
     #[error("database connection is unusable after a panic")]
     Poisoned,

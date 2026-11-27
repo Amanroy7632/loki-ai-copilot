@@ -32,6 +32,10 @@ exceptions = [
   # allowed, but changes to this crate's files would have to be published. PENDING OWNER
   # APPROVAL: decision D-07 in docs/STATUS.md. Remove this line if D-07 rejects it.
   { allow = ["MPL-2.0"], crate = "option-ext" },
+  # Pulled in by `jsonschema` -> `referencing` -> `fluent-uri`. MIT-0 ("MIT No Attribution") is
+  # MIT without the attribution clause, so more permissive than MIT. PENDING OWNER CONFIRMATION:
+  # decision D-07 in docs/STATUS.md.
+  { allow = ["MIT-0"], crate = "borrow-or-share" },
 ]
 
 [licenses.private]

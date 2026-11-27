@@ -9,7 +9,7 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "tests/security"]
 exclude = ["spikes"]          # P0 spikes are standalone crates, never workspace members
 
 [workspace.package]
@@ -57,6 +57,13 @@ tempfile = "3.27"
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
 sysinfo = { version = "0.40", default-features = false, features = ["system", "disk"] }
 wiremock = "0.6"
+# P3. jsonschema: no default features, so no remote/file `$ref` resolution and no HTTP client.
+# Tool schemas are our own constants. sha2: approval `args_hash`. jiff: IANA time zones for
+# `time.now` (system tzdb). plist: macOS app bundle Info.plist (bundle IDs), macOS only.
+jsonschema = { version = "0.63", default-features = false }
+sha2 = "0.11"
+jiff = "1.0"
+plist = "1.10"
 
 [workspace.lints.rust]
 unsafe_code = "deny"          # FFI modules opt out locally, with a `// SAFETY:` comment per block

@@ -11,14 +11,19 @@ use futures::FutureExt;
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
 use loki_agent::{
-    ChatStore, DEFAULT_SYSTEM_PROMPT, IdSource, Orchestrator, StoreError, TurnResult,
+    ChatStore, DEFAULT_SYSTEM_PROMPT, IdSource, Orchestrator, StoreError, ToolHost, ToolUi,
+    TurnResult,
 };
-use loki_core::{Conversation, ConversationId, Message, MessageId, UnixMillis};
+use loki_core::{
+    Capability, CapabilityStatus, Conversation, ConversationId, Grant, Message, MessageId, TaskId,
+    UnixMillis,
+};
 use loki_llm::{
     CancellationToken, ChatProvider, InstalledModel, MockProvider, OllamaApi, OllamaProvider,
     ProviderHealth, PullProgress,
 };
-use loki_memory::{Database, MemoryStore};
+use loki_memory::{Database, MemoryStore, TaskRow, ToolRunFilter, ToolRunRow};
+use loki_tools::platform::Platform;
 
 use crate::config::{self, Config, ProviderKind};
 use crate::error::RuntimeError;
@@ -28,13 +33,27 @@ use crate::models::{self, MachineProfile, Recommendation};
 use crate::net::HttpClients;
 use crate::paths::Paths;
 use crate::redact::Redactor;
+use crate::tooling::build_tool_host;
+
+/// One capability as shown by `loki permissions list`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionRow {
+    /// The capability.
+    pub capability: Capability,
+    /// What the platform reports right now.
+    pub status: CapabilityStatus,
+    /// Granted scopes (empty = not granted).
+    pub scopes: Vec<String>,
+}
 
 /// Longest conversation title derived from the first message, in characters.
 const TITLE_MAX_CHARS: usize = 60;
 
 /// Options for [`Runtime::open`].
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct RuntimeOptions {
+    /// OS adapter override (tests pass `MockPlatform`). `None` = the native adapter.
+    pub platform: Option<Arc<dyn Platform>>,
     /// `--data-dir`. When `None`, `LOKI_DATA_DIR` and then the OS default are used.
     pub data_dir: Option<PathBuf>,
     /// `--provider`: overrides the config for this run only.
@@ -45,6 +64,9 @@ pub struct RuntimeOptions {
     pub mock_token_delay: Duration,
     /// Install file logging as the global subscriber. Off in tests that open several runtimes.
     pub init_logging: bool,
+    /// With `provider = mock`: play these scripts (one per model request) instead of echoing.
+    /// For end-to-end and security tests (`loki --mock-script`); never a real provider.
+    pub mock_scripts: Option<Vec<loki_llm::MockScript>>,
 }
 
 /// How a reply attempt ended, as seen by a front end.
@@ -97,8 +119,8 @@ impl ChatStore for MemoryChatStore {
 struct SystemIds;
 
 impl IdSource for SystemIds {
-    fn message_id(&self) -> MessageId {
-        ids::new_message_id()
+    fn new_id(&self) -> String {
+        ids::new_run_id()
     }
     fn now(&self) -> UnixMillis {
         UnixMillis::now()
@@ -116,9 +138,21 @@ pub struct Runtime {
     http: HttpClients,
     provider_kind: ProviderKind,
     model: Option<String>,
-    mock_token_delay: Duration,
+    mock: MockProvider,
     orchestrator: Orchestrator,
+    platform: Arc<dyn Platform>,
+    tools: Option<Arc<ToolHost>>,
     _logging: Option<LoggingGuard>,
+}
+
+impl std::fmt::Debug for RuntimeOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuntimeOptions")
+            .field("data_dir", &self.data_dir)
+            .field("provider", &self.provider)
+            .field("model", &self.model)
+            .finish_non_exhaustive()
+    }
 }
 
 impl std::fmt::Debug for Runtime {
@@ -152,17 +186,35 @@ impl Runtime {
             tracing::warn!("{warning}");
         }
 
-        let store = MemoryStore::new(Database::open(&paths.database_file())?);
+        let db = Database::open(&paths.database_file())?;
+        // Startup recovery (P3-T04): unfinished tasks become Interrupted and are never re-run.
+        // `open` is blocking by contract, so this runs synchronously before the store exists.
+        let interrupted = db.recover_interrupted_tasks(UnixMillis::now())?;
+        let store = MemoryStore::new(db);
+        let mut warnings = loaded.warnings;
+        if interrupted > 0 {
+            tracing::warn!(
+                interrupted,
+                "marked unfinished tool tasks as interrupted; none were re-run"
+            );
+        }
+        let platform = options
+            .platform
+            .unwrap_or_else(loki_tools::platform::native);
+        let (tools, tool_warnings) = build_tool_host(&config, &store, Arc::clone(&platform))?;
+        warnings.extend(tool_warnings);
         let http = HttpClients::new(config.network_mode);
         let provider_kind = options.provider.unwrap_or(config.provider);
         let model = options.model.or_else(|| config.model_id.clone());
+        let mock = mock_provider(options.mock_scripts.clone(), options.mock_token_delay);
         let orchestrator = build_orchestrator(
             &config,
             &store,
             http,
             provider_kind,
             model.as_deref(),
-            options.mock_token_delay,
+            mock.clone(),
+            tools.clone(),
         )?;
         tracing::info!(
             provider = orchestrator.provider().name(),
@@ -172,13 +224,15 @@ impl Runtime {
         Ok(Self {
             paths,
             config,
-            warnings: loaded.warnings,
+            warnings,
             store,
             http,
             provider_kind,
             model,
-            mock_token_delay: options.mock_token_delay,
+            mock,
             orchestrator,
+            platform,
+            tools,
             _logging: logging,
         })
     }
@@ -196,6 +250,15 @@ impl Runtime {
     /// Warnings from startup (e.g. a corrupt config was replaced) for the front end to show.
     pub fn startup_warnings(&self) -> &[String] {
         &self.warnings
+    }
+
+    /// Test hook: what the **mock** provider was sent (empty for real providers). Used by the
+    /// security suite to check that nothing secret reaches the model context (SEC-10).
+    pub fn recorded_mock_requests(&self) -> Vec<loki_llm::ChatRequest> {
+        match self.provider_kind {
+            ProviderKind::Mock => self.mock.recorded_requests(),
+            ProviderKind::Ollama => Vec::new(),
+        }
     }
 
     /// The provider's display name (`mock` or `ollama`), so front ends can label replies honestly.
@@ -224,7 +287,8 @@ impl Runtime {
             self.http,
             ProviderKind::Ollama,
             Some(model),
-            self.mock_token_delay,
+            self.mock.clone(),
+            self.tools.clone(),
         )?;
         self.orchestrator = orchestrator;
         self.provider_kind = ProviderKind::Ollama;
@@ -276,12 +340,13 @@ impl Runtime {
         conversation: &ConversationId,
         text: &str,
         cancel: CancellationToken,
+        ui: &dyn ToolUi,
         on_token: impl FnMut(&str),
     ) -> Result<ReplyOutcome, RuntimeError> {
         self.conversation(conversation).await?;
         Ok(self
             .orchestrator
-            .send(conversation, text, cancel, on_token)
+            .send(conversation, text, cancel, ui, on_token)
             .await?)
     }
 
@@ -290,13 +355,169 @@ impl Runtime {
         &self,
         conversation: &ConversationId,
         cancel: CancellationToken,
+        ui: &dyn ToolUi,
         on_token: impl FnMut(&str),
     ) -> Result<ReplyOutcome, RuntimeError> {
         self.conversation(conversation).await?;
         Ok(self
             .orchestrator
-            .retry(conversation, cancel, on_token)
+            .retry(conversation, cancel, ui, on_token)
             .await?)
+    }
+
+    // --------------------------------------------------------------------- tools (P3)
+
+    /// Whether the tool loop is enabled.
+    pub fn tools_enabled(&self) -> bool {
+        self.tools.is_some()
+    }
+
+    /// Every capability with its platform status and whether (and where) it is granted.
+    pub async fn permissions(&self) -> Result<Vec<PermissionRow>, RuntimeError> {
+        let grants = self.store.run(|db| db.active_grants()).await?;
+        let statuses = self.platform.capabilities();
+        Ok(Capability::ALL
+            .into_iter()
+            .map(|capability| PermissionRow {
+                capability,
+                status: statuses.get(&capability).cloned().unwrap_or(
+                    CapabilityStatus::Unavailable {
+                        reason: String::from("not reported by this platform"),
+                    },
+                ),
+                scopes: grants
+                    .iter()
+                    .filter(|g| g.capability == capability)
+                    .map(|g| g.scope.clone())
+                    .collect(),
+            })
+            .collect())
+    }
+
+    /// Grants a capability (`scope` = `*` or an allowed-root ID for `file_read`). Granting a
+    /// capability the platform can't support is refused, so the UI never shows it as working.
+    pub async fn grant(&self, capability: &str, scope: &str) -> Result<Grant, RuntimeError> {
+        let grant = self.parse_grant(capability, scope)?;
+        if let Some(CapabilityStatus::Unavailable { reason }) =
+            self.platform.capabilities().get(&grant.capability)
+        {
+            return Err(RuntimeError::InvalidInput(format!(
+                "{capability} is unavailable here: {reason}"
+            )));
+        }
+        let stored = grant.clone();
+        self.store
+            .run(move |db| db.grant(&ids::new_run_id(), &stored, UnixMillis::now()))
+            .await?;
+        Ok(grant)
+    }
+
+    /// Revokes an exact grant. Returns how many were revoked.
+    pub async fn revoke(&self, capability: &str, scope: &str) -> Result<usize, RuntimeError> {
+        let grant = self.parse_grant(capability, scope)?;
+        Ok(self
+            .store
+            .run(move |db| db.revoke(&grant, UnixMillis::now()))
+            .await?)
+    }
+
+    fn parse_grant(&self, capability: &str, scope: &str) -> Result<Grant, RuntimeError> {
+        let parsed = Capability::parse(capability).ok_or_else(|| {
+            let known: Vec<&str> = Capability::ALL.iter().map(|c| c.as_str()).collect();
+            RuntimeError::InvalidInput(format!(
+                "unknown capability '{capability}'. Known: {}",
+                known.join(", ")
+            ))
+        })?;
+        if scope != loki_core::ANY_SCOPE
+            && !self
+                .config
+                .allowed_roots
+                .iter()
+                .any(|root| root.id == scope)
+        {
+            return Err(RuntimeError::InvalidInput(format!(
+                "scope must be '*' or an allowed root ID (see `loki roots list`), not '{scope}'"
+            )));
+        }
+        Ok(Grant {
+            capability: parsed,
+            scope: scope.to_owned(),
+        })
+    }
+
+    /// Adds an allowed root to the config. The path must be an existing directory.
+    pub fn add_root(&mut self, id: &str, path: &std::path::Path) -> Result<(), RuntimeError> {
+        let valid_id = (1..=32).contains(&id.len())
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-');
+        if !valid_id {
+            return Err(RuntimeError::InvalidInput(String::from(
+                "root IDs are 1-32 of a-z, 0-9, _ or -",
+            )));
+        }
+        let canonical = path
+            .canonicalize()
+            .ok()
+            .filter(|p| p.is_dir())
+            .ok_or_else(|| {
+                RuntimeError::InvalidInput(format!(
+                    "{} is not an existing directory",
+                    path.display()
+                ))
+            })?;
+        let mut config = self.config.clone();
+        config.allowed_roots.retain(|root| root.id != id);
+        config.allowed_roots.push(crate::config::AllowedRoot {
+            id: id.to_owned(),
+            path: canonical,
+        });
+        config::save(&self.paths.config_file(), &config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    /// Removes an allowed root from the config (its grants stay in the table but can no longer
+    /// match, because the root no longer resolves). Returns whether it existed.
+    pub fn remove_root(&mut self, id: &str) -> Result<bool, RuntimeError> {
+        let mut config = self.config.clone();
+        let before = config.allowed_roots.len();
+        config.allowed_roots.retain(|root| root.id != id);
+        let removed = config.allowed_roots.len() != before;
+        if removed {
+            config::save(&self.paths.config_file(), &config)?;
+            self.config = config;
+        }
+        Ok(removed)
+    }
+
+    /// Audit rows, newest first (redacted summaries only).
+    pub async fn audit_runs(&self, filter: ToolRunFilter) -> Result<Vec<ToolRunRow>, RuntimeError> {
+        Ok(self.store.run(move |db| db.list_tool_runs(&filter)).await?)
+    }
+
+    /// One task with its audit rows.
+    pub async fn audit_task(
+        &self,
+        id: &TaskId,
+    ) -> Result<(TaskRow, Vec<ToolRunRow>), RuntimeError> {
+        let lookup = id.clone();
+        let (task, runs) = self
+            .store
+            .run(move |db| Ok((db.get_task(&lookup)?, db.tool_runs_for_task(&lookup)?)))
+            .await?;
+        let task = task.ok_or_else(|| RuntimeError::InvalidInput(format!("no task {id}")))?;
+        Ok((task, runs))
+    }
+
+    /// Apps the platform can launch (for `loki apps list`).
+    pub async fn apps(&self) -> Result<Vec<loki_tools::platform::AppEntry>, RuntimeError> {
+        let platform = Arc::clone(&self.platform);
+        tokio::task::spawn_blocking(move || platform.list_apps())
+            .await
+            .map_err(|error| RuntimeError::Tools(error.to_string()))?
+            .map_err(|error| RuntimeError::InvalidInput(error.to_string()))
     }
 
     // --------------------------------------------------------------------- models (P2-T05)
@@ -350,16 +571,26 @@ fn refuse_cloud(model: &str) -> Result<(), RuntimeError> {
     Ok(())
 }
 
+/// The mock provider for `provider = mock`: scripted when scripts are given, else echo.
+fn mock_provider(scripts: Option<Vec<loki_llm::MockScript>>, delay: Duration) -> MockProvider {
+    match scripts {
+        Some(scripts) if !scripts.is_empty() => MockProvider::sequence(scripts),
+        _ => MockProvider::echo(),
+    }
+    .with_token_delay(delay)
+}
+
 fn build_orchestrator(
     config: &Config,
     store: &MemoryStore,
     http: HttpClients,
     kind: ProviderKind,
     model: Option<&str>,
-    mock_token_delay: Duration,
+    mock: MockProvider,
+    tools: Option<Arc<ToolHost>>,
 ) -> Result<Orchestrator, RuntimeError> {
     let provider: Arc<dyn ChatProvider> = match kind {
-        ProviderKind::Mock => Arc::new(MockProvider::echo().with_token_delay(mock_token_delay)),
+        ProviderKind::Mock => Arc::new(mock),
         ProviderKind::Ollama => {
             let model = model.ok_or(RuntimeError::NoModelSelected)?;
             refuse_cloud(model)?;
@@ -372,13 +603,17 @@ fn build_orchestrator(
             )
         }
     };
-    Ok(Orchestrator::new(
+    let orchestrator = Orchestrator::new(
         provider,
         Arc::new(MemoryChatStore(store.clone())),
         Arc::new(SystemIds),
         DEFAULT_SYSTEM_PROMPT,
         config.context.reserve_tokens,
-    ))
+    );
+    Ok(match tools {
+        Some(host) => orchestrator.with_tools(host),
+        None => orchestrator,
+    })
 }
 
 /// First line of the message, trimmed and cut to [`TITLE_MAX_CHARS`] characters.
@@ -437,6 +672,7 @@ mod tests {
                     &conversation.id,
                     "hi there",
                     CancellationToken::new(),
+                    &loki_agent::DenyAllApprovals,
                     |_| {},
                 )
                 .await
@@ -459,7 +695,13 @@ mod tests {
         let cancel = CancellationToken::new();
         cancel.cancel();
         let outcome = runtime
-            .send(&conversation.id, "q", cancel, |_| {})
+            .send(
+                &conversation.id,
+                "q",
+                cancel,
+                &loki_agent::DenyAllApprovals,
+                |_| {},
+            )
             .await
             .unwrap();
         assert_eq!(outcome, ReplyOutcome::Stopped(None));
@@ -467,7 +709,12 @@ mod tests {
 
         for _ in 0..2 {
             runtime
-                .retry_reply(&conversation.id, CancellationToken::new(), |_| {})
+                .retry_reply(
+                    &conversation.id,
+                    CancellationToken::new(),
+                    &loki_agent::DenyAllApprovals,
+                    |_| {},
+                )
                 .await
                 .unwrap();
         }

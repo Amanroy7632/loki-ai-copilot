@@ -15,6 +15,9 @@ Conversation  { id, title, created_at, updated_at }                deny_unknown_
 Role          = System | User | Assistant | Tool
 IDs           RequestId, SessionId, ToolName, ConversationId, MessageId   (string newtypes; UUID v7 text, ADR-0004)
 UnixMillis    i64 ms since the epoch, UTC (TS: number)
+Grant         { capability, scope }                     deny_unknown_fields; scope "*" or an allowed-root ID
+NetworkMode   = LocalOnly | ToolsAllowed               (moved here from loki-runtime, ADR-0011)
+TaskId, ApprovalId                                     string newtypes (P3)
 Risk          = ReadOnly < Network < LocalChange < Sensitive
 ToolStatus    = Succeeded | Failed | Cancelled | TimedOut | Denied
 ErrorCode     = InvalidArguments | UnknownTool | PolicyDenied | ApprovalInvalid | PermissionRequired
@@ -69,12 +72,27 @@ Platform (loki-platform, P3-T07)
   launch_app(app_id) -> LaunchOutcome (verified)
   system_info() -> SystemInfo
 
-Tool (loki-tools, P3-T01)
-  spec() -> ToolSpec
-  execute(validated_args, ToolContext { cancel, deadline, grants_scope }) -> Result<Value, ToolError>
+Tool (loki-tools, implemented in P3-T01)
+  spec() -> &ToolSpec
+  scope(args) -> String                       grant scope for policy (`*`, or a root ID for files.*)
+  execute(args, ToolContext { cancel, deadline, platform }, permit: &loki_policy::Allowed)
+      -> BoxFuture<Result<Value, ToolError>>    the permit makes skipping policy a compile error (ADR-0011)
+  audit_summary(&Value) -> String             redacted one-liner, never output data
 
-Policy (loki-policy, P3-T02)
-  evaluate(request, spec, user_grants, capability_status, network_mode) -> Decision
+Executor (loki-tools, P3-T04)
+  run(tool, request, permit: Allowed (by value, not Clone), platform, cancel) -> Execution { result, audit_summary }
+      checks permit.matches(request); semaphore; deadline; cancel; 64 KiB result cap
+
+Policy (loki-policy, implemented in P3-T02/T03)
+  evaluate(PolicyInput { request, spec?, capability_status?, scope, grants, network_mode }) -> Decision
+      order: unknown tool -> capability not Supported -> no grant for (capability, scope) ->
+             Network in local_only -> LocalChange/Sensitive need approval -> Allow
+  authorize(input, approval_id, now, ttl) -> Allowed | NeedsApproval(PendingApproval) | Denied { reason }
+  allow_approved(ConsumedApproval, request) -> Result<Allowed, ApprovalError>   (store consumed it first)
+
+Agent tool loop (loki-agent, P3-T05)
+  validate -> policy -> approval (ToolUi, default no) -> execute -> audit; results go back wrapped as
+  <tool_result untrusted="true" tool="...">...</tool_result>; max 6 calls per turn (config, hard max 20)
 ```
 
 **P1-T04 decision (ADR-0006):** errors travel only as `Err(LlmError)` stream items; there is no
@@ -87,6 +105,7 @@ when it builds a `ToolRequest`. Until P3, the agent counts and logs tool-call pr
 | --- | --- | --- | --- | --- |
 | `time.now` | `timezone?` (IANA) | ReadOnly | Clock | Returns an ISO-8601 timestamp. |
 | `system.info` | none | ReadOnly | SystemInfo | Returns OS, CPU, RAM and disk summary. |
+| `app.list` | `query?` (max 64), `limit?` (1-50) | ReadOnly | AppLaunch | Discovered apps (`app_id`, name), so the model can find a valid ID (added in P3-T07). |
 | `app.open` | `app_id` | LocalChange | AppLaunch | `app_id` must come from the discovered registry. Verifies the launch. |
 | `files.search` | `root_id`, `query`, `limit` (max 50) | ReadOnly | FileRead | Searches inside an approved root only. Returns `file_id`s, never absolute paths. |
 | `files.read` | `file_id`, `max_bytes` (max 256 KiB) | ReadOnly | FileRead | Reads supported text types only. |

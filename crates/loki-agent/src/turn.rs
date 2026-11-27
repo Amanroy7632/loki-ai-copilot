@@ -4,7 +4,9 @@
 //! the stream into a single outcome. Persistence stays with the caller (`loki-runtime`).
 
 use futures::StreamExt;
-use loki_llm::{CancellationToken, ChatEvent, ChatProvider, ChatRequest, LlmError, Usage};
+use loki_llm::{
+    CancellationToken, ChatEvent, ChatProvider, ChatRequest, LlmError, ToolCallDraft, Usage,
+};
 
 /// How one reply ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,9 +17,8 @@ pub enum TurnOutcome {
         text: String,
         /// Token accounting from the provider.
         usage: Usage,
-        /// Tool-call proposals received and **not executed**. Tools arrive in P3; until then
-        /// proposals are dropped (and logged), never run.
-        ignored_tool_calls: usize,
+        /// Tool calls the model proposed, in order. Nothing has run: the orchestrator decides.
+        tool_calls: Vec<ToolCallDraft>,
     },
     /// The user cancelled. `partial` holds whatever text arrived first.
     Cancelled {
@@ -38,7 +39,7 @@ pub async fn stream_reply(
 ) -> Result<TurnOutcome, LlmError> {
     let mut stream = provider.stream_chat(request, cancel);
     let mut text = String::new();
-    let mut ignored_tool_calls = 0_usize;
+    let mut tool_calls = Vec::new();
     while let Some(item) = stream.next().await {
         match item {
             Ok(ChatEvent::Token { text: fragment }) => {
@@ -46,14 +47,14 @@ pub async fn stream_reply(
                 text.push_str(&fragment);
             }
             Ok(ChatEvent::ToolCall(draft)) => {
-                ignored_tool_calls += 1;
-                tracing::warn!(tool = %draft.tool, "tool call proposed but tools are not enabled yet; ignored");
+                tracing::debug!(tool = %draft.tool, "tool call proposed");
+                tool_calls.push(draft);
             }
             Ok(ChatEvent::Done(usage)) => {
                 return Ok(TurnOutcome::Completed {
                     text,
                     usage,
-                    ignored_tool_calls,
+                    tool_calls,
                 });
             }
             Err(LlmError::Cancelled) => return Ok(TurnOutcome::Cancelled { partial: text }),
@@ -136,7 +137,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_call_proposals_are_counted_but_never_executed() {
+    async fn tool_call_proposals_are_returned_not_executed() {
         let script = MockScript::new(vec![
             MockStep::ToolCall {
                 tool: "app.open".into(),
@@ -157,12 +158,10 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(matches!(
-            outcome,
-            TurnOutcome::Completed {
-                ignored_tool_calls: 1,
-                ..
-            }
-        ));
+        let TurnOutcome::Completed { tool_calls, .. } = outcome else {
+            panic!()
+        };
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].tool.as_str(), "app.open");
     }
 }

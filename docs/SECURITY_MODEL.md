@@ -39,8 +39,10 @@ mode. A test asserts that no other crate constructs its own client.
 
 ## Threat-model gate
 
-**A release is blocked if any of these can bypass policy.** Each line has an automated test,
-which lives in `tests/security/` once P3 starts.
+**A release is blocked if any of these can bypass policy.** Each line has an automated test in
+`tests/security/tests/security.rs` (crate `loki-security-tests`), named after its ID, e.g.
+`sec_05_approval_replay_is_refused`. SEC-01..06 and SEC-10 exist since P3-T10; SEC-07 is covered by
+`loki-runtime::net` tests (P2-T06); SEC-08, SEC-09 and SEC-11 arrive with P7, P10 and P4.
 
 | ID | Test |
 | --- | --- |

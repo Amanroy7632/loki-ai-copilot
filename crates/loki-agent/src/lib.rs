@@ -2,7 +2,7 @@
 //!
 //! Agent orchestration: context building and the model <-> tool loop.
 //!
-//! **Status:** P2-T03 (context budget) and P2-T04 (orchestrator v1, no tools) implemented.
+//! **Status:** P2-T03 (context budget), P2-T04 (orchestrator) and P3-T05 (tool loop) implemented.
 //! Tickets that fill this crate in: P2-T04 (chat loop), P3-T05 (tool loop), P7-T04 (memory retrieval).
 //!
 //! ## Responsibilities
@@ -24,11 +24,16 @@
 
 pub mod context;
 pub mod orchestrator;
+pub mod tools;
 pub mod turn;
 
 pub use context::{BuiltContext, ContextBudget, build_context, estimate_tokens};
 pub use orchestrator::{
     AgentError, ChatStore, DEFAULT_SYSTEM_PROMPT, IdSource, Orchestrator, StoreError,
-    TOOLS_UNAVAILABLE_REPLY, TurnResult,
+    TOOL_LIMIT_NOTE, TOOLS_UNAVAILABLE_REPLY, TurnResult,
+};
+pub use tools::{
+    AuditStore, DEFAULT_MAX_TOOL_CALLS, DEFAULT_TOOL_TIMEOUT, DenyAllApprovals, Dispatched,
+    ToolEvent, ToolHost, ToolUi, wrap_untrusted,
 };
 pub use turn::{TurnOutcome, stream_reply};

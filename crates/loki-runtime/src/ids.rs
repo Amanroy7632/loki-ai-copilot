@@ -22,6 +22,11 @@ pub fn new_request_id() -> RequestId {
     RequestId::new(Uuid::now_v7().to_string())
 }
 
+/// A new ID for a `tool_runs` or `permissions` row.
+pub fn new_run_id() -> String {
+    Uuid::now_v7().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

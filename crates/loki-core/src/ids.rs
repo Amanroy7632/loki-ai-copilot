@@ -67,6 +67,16 @@ string_id! {
     MessageId
 }
 
+string_id! {
+    /// Identifies a task (a row in `tasks`): one tool request through its lifecycle.
+    TaskId
+}
+
+string_id! {
+    /// Identifies an approval (a row in `approvals`).
+    ApprovalId
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
