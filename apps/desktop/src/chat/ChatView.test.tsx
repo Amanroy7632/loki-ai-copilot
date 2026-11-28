@@ -186,3 +186,58 @@ describe("ChatView", () => {
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveFocus();
   });
 });
+
+describe("ChatView: AI-assistant touches", () => {
+  it("a suggestion fills the message box but doesn't send it", async () => {
+    const backend = installFakeBackend();
+    const user = userEvent.setup();
+    render(<ChatView />);
+    const suggestions = await screen.findByRole("list", { name: "Suggestions" });
+    await user.click(within(suggestions).getByRole("button", { name: "What time is it in Tokyo?" }));
+    const box = screen.getByRole("textbox", { name: "Message" });
+    expect(box).toHaveValue("What time is it in Tokyo?");
+    expect(box).toHaveFocus();
+    expect(backend.calls.some((c) => c.cmd === "send_message")).toBe(false);
+    await user.keyboard("{Enter}");
+    expect(await screen.findByText("Mock reply: What time is it in Tokyo?")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Suggestions" })).not.toBeInTheDocument();
+  });
+
+  it("searching filters the conversation list", async () => {
+    installFakeBackend({ conversations: [groceries, trip] });
+    const user = userEvent.setup();
+    render(<ChatView />);
+    await user.type(await screen.findByRole("searchbox", { name: "Search conversations" }), "trip");
+    const nav = screen.getByRole("navigation", { name: "Conversations" });
+    expect(within(nav).getByRole("button", { name: "Trip plan" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("button", { name: "Groceries" })).not.toBeInTheDocument();
+    await user.clear(screen.getByRole("searchbox", { name: "Search conversations" }));
+    await user.type(screen.getByRole("searchbox", { name: "Search conversations" }), "zzz");
+    expect(screen.getByText(/No conversations match/)).toBeInTheDocument();
+  });
+
+  it("shows a thinking indicator until the first token, then the streamed text", async () => {
+    installFakeBackend({ approval: { tool: "app.open", risk: "local_change", arguments: { app_id: "x" } } });
+    const user = userEvent.setup();
+    render(<ChatView />);
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "open x{Enter}");
+    // The approval is asked before any token: Loki is "thinking".
+    expect(await screen.findByRole("status", { name: "Thinking" })).toBeInTheDocument();
+  });
+
+  it("renders stored replies as Markdown, with the conversation title in the header", async () => {
+    installFakeBackend({
+      conversations: [trip],
+      messages: {
+        t: [msg("1", "t", "user", "Plan Rome"), msg("2", "t", "assistant", "**Day one**\n- Colosseum")],
+      },
+    });
+    const user = userEvent.setup();
+    render(<ChatView />);
+    await user.click(await screen.findByRole("button", { name: "Trip plan" }));
+    const log = screen.getByRole("log");
+    expect(await within(log).findByText("Day one")).toContainHTML("strong");
+    expect(screen.getByRole("heading", { name: "Trip plan", level: 2 })).toBeInTheDocument();
+    expect(within(log).getByRole("button", { name: "Copy reply" })).toBeInTheDocument();
+  });
+});

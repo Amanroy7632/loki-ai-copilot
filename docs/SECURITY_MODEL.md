@@ -83,3 +83,11 @@ until P7 implements those tables (ADR-0015).
 | Wake word | Off |
 | Network tools | Off |
 | Start at login | Off |
+
+## Rendering model output in the desktop UI
+
+Replies are untrusted. The desktop renders them with a small Markdown subset
+(`apps/desktop/src/chat/Markdown.tsx`) that only creates React text nodes and a fixed set of
+elements: no HTML passthrough, no `dangerouslySetInnerHTML`. Links are shown with their address
+but are never clickable, so a reply can't navigate the webview. Tests: `Markdown.test.tsx`
+(HTML stays text, `javascript:` and other links aren't anchors, unclosed fences are safe).

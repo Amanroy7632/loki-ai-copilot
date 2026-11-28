@@ -1,6 +1,8 @@
 import type { Conversation, ConversationId } from "@loki/contracts";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
+import { PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "../icons";
+
 export interface ConversationListProps {
   conversations: Conversation[];
   selected: ConversationId | null;
@@ -21,8 +23,13 @@ type Mode =
  * Delete always asks first, with focus on Cancel.
  */
 export function ConversationList(props: ConversationListProps) {
-  const { conversations, selected, disabled } = props;
+  const { selected, disabled } = props;
   const [mode, setMode] = useState<Mode>({ kind: "idle" });
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const conversations = needle
+    ? props.conversations.filter((c) => c.title.toLowerCase().includes(needle))
+    : props.conversations;
   const itemRefs = useRef(new Map<ConversationId, HTMLButtonElement>());
   const focusAfter = useRef<ConversationId | null>(null);
 
@@ -49,10 +56,26 @@ export function ConversationList(props: ConversationListProps) {
   return (
     <nav className="conversations" aria-label="Conversations">
       <button type="button" className="new-chat" onClick={props.onNew} disabled={disabled}>
-        New chat
+        <PlusIcon />
+        <span>New chat</span>
       </button>
-      {conversations.length === 0 ? (
+      {props.conversations.length > 0 && (
+        <label className="search">
+          <SearchIcon />
+          <span className="sr-only">Search conversations</span>
+          <input
+            type="search"
+            placeholder="Search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+      )}
+      <h2 className="sidebar-label">Recent</h2>
+      {props.conversations.length === 0 ? (
         <p className="empty">No conversations yet.</p>
+      ) : conversations.length === 0 ? (
+        <p className="empty">No conversations match “{query.trim()}”.</p>
       ) : (
         <ul>
           {conversations.map((conversation, index) => (
@@ -98,7 +121,7 @@ export function ConversationList(props: ConversationListProps) {
                     disabled={disabled}
                     onClick={() => setMode({ kind: "renaming", id: conversation.id })}
                   >
-                    ✎
+                    <PencilIcon />
                   </button>
                   <button
                     type="button"
@@ -107,7 +130,7 @@ export function ConversationList(props: ConversationListProps) {
                     disabled={disabled}
                     onClick={() => setMode({ kind: "deleting", id: conversation.id })}
                   >
-                    ×
+                    <TrashIcon />
                   </button>
                 </div>
               )}
