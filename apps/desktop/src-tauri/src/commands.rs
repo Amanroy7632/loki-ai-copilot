@@ -19,6 +19,7 @@ impl AppState {
     /// Blocking: called once from Tauri's setup hook before the window loads.
     pub fn open() -> Result<Self, loki_runtime::RuntimeError> {
         let (runtime, note) = Runtime::open_for_app(RuntimeOptions {
+            provider: loki_runtime::config::provider_from_env()?,
             init_logging: true,
             ..RuntimeOptions::default()
         })?;

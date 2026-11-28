@@ -37,6 +37,7 @@ cargo test -p loki-core task::tests::approval_path_is_legal
 
 # From P5 (desktop app)
 pnpm install
+./scripts/dev.sh               # Ollama + desktop app with hot reload (see --help)
 pnpm --filter desktop tauri dev
 pnpm --filter desktop tauri build
 ```

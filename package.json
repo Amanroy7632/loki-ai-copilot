@@ -7,6 +7,9 @@
     "node": ">=20"
   },
   "scripts": {
+    "dev": "sh scripts/dev.sh",
+    "dev:mock": "sh scripts/dev.sh --mock",
+    "dev:cli": "sh scripts/dev.sh --cli",
     "lint": "eslint . --max-warnings 0",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
