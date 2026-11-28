@@ -26,7 +26,26 @@ const MAX_TURN_ID_LEN: usize = 64;
 /// Running turns, by front-end-chosen ID, so `stop_turn` can cancel one.
 #[derive(Debug, Default)]
 pub struct TurnRegistry {
-    turns: Mutex<HashMap<String, CancellationToken>>,
+    state: Mutex<RunningTurns>,
+}
+
+#[derive(Debug, Default)]
+struct RunningTurns {
+    turns: HashMap<String, CancellationToken>,
+    shutting_down: bool,
+}
+
+pub(crate) struct TurnLease {
+    registry: Arc<TurnRegistry>,
+    id: String,
+    pub cancel: CancellationToken,
+}
+
+impl Drop for TurnLease {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        self.registry.end(&self.id);
+    }
 }
 
 impl TurnRegistry {
@@ -35,29 +54,29 @@ impl TurnRegistry {
         if turn_id.is_empty() || turn_id.len() > MAX_TURN_ID_LEN {
             return None;
         }
-        let mut turns = self.turns.lock().ok()?;
-        if turns.contains_key(turn_id) {
+        let mut state = self.state.lock().ok()?;
+        if state.shutting_down || state.turns.contains_key(turn_id) {
             return None;
         }
         let token = CancellationToken::new();
-        turns.insert(turn_id.to_owned(), token.clone());
+        state.turns.insert(turn_id.to_owned(), token.clone());
         Some(token)
     }
 
     /// Removes a finished turn.
     pub fn end(&self, turn_id: &str) {
-        if let Ok(mut turns) = self.turns.lock() {
-            turns.remove(turn_id);
+        if let Ok(mut state) = self.state.lock() {
+            state.turns.remove(turn_id);
         }
     }
 
     /// Cancels a running turn. Returns `false` if there is no such turn.
     pub fn stop(&self, turn_id: &str) -> bool {
         let token = self
-            .turns
+            .state
             .lock()
             .ok()
-            .and_then(|turns| turns.get(turn_id).cloned());
+            .and_then(|state| state.turns.get(turn_id).cloned());
         match token {
             Some(token) => {
                 token.cancel();
@@ -65,6 +84,30 @@ impl TurnRegistry {
             }
             None => false,
         }
+    }
+
+    pub(crate) fn enter(self: &Arc<Self>, id: &str) -> Option<TurnLease> {
+        let cancel = self.begin(id)?;
+        Some(TurnLease {
+            registry: Arc::clone(self),
+            id: id.into(),
+            cancel,
+        })
+    }
+
+    /// Cancels all admitted turns. Shutdown also atomically refuses every future turn.
+    pub fn cancel_all(&self, shutdown: bool) {
+        if let Ok(mut state) = self.state.lock() {
+            state.shutting_down |= shutdown;
+            for cancel in state.turns.values() {
+                cancel.cancel();
+            }
+        }
+    }
+
+    /// Whether all admitted turns have returned/dropped. A poisoned registry fails closed.
+    pub fn is_idle(&self) -> bool {
+        self.state.lock().is_ok_and(|state| state.turns.is_empty())
     }
 }
 

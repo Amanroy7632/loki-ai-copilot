@@ -17,6 +17,7 @@
 pub mod api;
 pub mod capability;
 pub mod decision;
+pub mod desktop;
 pub mod grant;
 pub mod ids;
 pub mod message;
@@ -29,6 +30,7 @@ pub mod tool;
 pub use api::{AllowedRootInfo, AppStatus, ApprovalPreview, PermissionRow, TurnEvent};
 pub use capability::{Capability, CapabilityStatus};
 pub use decision::Decision;
+pub use desktop::AutostartStatus;
 pub use grant::{ANY_SCOPE, Grant};
 pub use ids::{ApprovalId, ConversationId, MessageId, RequestId, SessionId, TaskId, ToolName};
 pub use message::{Conversation, Message, Role};

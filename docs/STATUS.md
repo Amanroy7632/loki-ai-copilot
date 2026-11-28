@@ -9,7 +9,7 @@
 | | |
 | --- | --- |
 | **Current phase** | P5: Desktop ([phase file](phases/P05-desktop-app.md)), with P4 voice work open in parallel. Owner asked to continue from Claude's handoff (2026-11-28). Earlier phase gates remain open. |
-| **Next ticket** | **P5-T07 Tray and background**, including the autostart integration needed by partial P5-T06. P5-T06 memory/FTS acceptance depends on P7; P4-T04..T09 remain open. Earlier CI/manual gates and D-05/D-07 remain unresolved. |
+| **Next ticket** | **P5-T08 Voice UI** (P5-T07 is implemented; its acceptance is the owner's run of `docs/checklists/desktop-lifecycle.md`). P5-T06 memory/FTS acceptance depends on P7; P4-T04..T09 remain open. Earlier CI/manual gates and D-05/D-07 remain unresolved. |
 | **Last gate passed** | none |
 | **Reference OS** | **macOS** (Apple Silicon first), ADR-0003 |
 
@@ -22,7 +22,7 @@
 | P2 Local chat | code complete; all checks pass locally (161 tests); manual chat against real Ollama recorded. Gate not passed (see Next ticket). |
 | P3 Tools and policy | code complete; all checks pass locally (238 tests); native macOS smoke test passed (real model, approved app launch). Gate not passed: SEC tests not yet run in CI. |
 | P4 Voice | P4-T01..T03 implemented: state machine, explicit microphone capture, VAD and silence timeout (33 voice tests). No STT/TTS integration yet. Gate not passed. |
-| P5 Desktop | P5-T01..T05 implemented; P5-T06 settings/history controls implemented with autostart and memory/FTS dependencies outstanding. Native interaction and phase gate remain open. |
+| P5 Desktop | P5-T01..T05 implemented; P5-T06 settings/history controls implemented (memory/FTS waits for P7); P5-T07 tray/lifecycle implemented, checklist pending. Native interaction and phase gate remain open. |
 | P6–P11 | not started |
 
 ## P0 tickets
@@ -100,7 +100,7 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 - [x] P5-T03 Chat UI: streaming messages (aria-busy while streaming, `log` region), Stop (button or Escape), Retry, conversation list with New, select, rename (Enter/Escape, focus restored) and delete (inline confirm, focus on Cancel), Up/Down navigation, visible focus. 20 Vitest component tests on a fake backend that streams through real Channels. Runtime + commands for rename/delete. *Interactive manual run pending the owner* (`docs/checklists/p5-chat-manual.md`); the agent verified the app starts.
 - [x] P5-T04 Approval dialog: tool, plain-language risk, every argument (invisible/bidi characters shown as `\u{…}`), countdown; focus on Deny; Escape denies; Tab trapped; auto-repeat ignored; a Sensitive action can only be approved by keyboard after the user moved focus to Approve. `respond_approval` now carries the shown arguments: the broker refuses a "yes" that is expired or doesn't match (delivered as a refusal). Acceptance: `approving_is_bound_to_the_shown_arguments`, `a_large_integer_rounded_by_the_webview_does_not_match`, `an_expired_approval_is_refused_but_a_no_is_always_accepted`, `mock_approval_for_different_shown_arguments_runs_nothing` (Rust) and 13 Vitest tests in `ApprovalDialog.test.tsx`. *Interactive run pending the owner* (`docs/checklists/p5-chat-manual.md`).
 - [x] P5-T05 Permissions screen: every capability with status and reason (unavailable ones can't be allowed), Allow/Revoke, allowed folders added through the native picker opened from Rust (no `dialog:` permission for the webview, ADR-0014), Allow/Revoke reading per folder, Remove with confirmation. Runtime fixes found on the way: root changes now reach the file tools without a restart, and removing or repointing a root revokes its grants. Acceptance: `mock_revoking_a_grant_immediately_denies_the_next_call` (same runtime: Succeeded, revoke, Denied) plus 4 more runtime tests and 9 Vitest tests. *Interactive run pending the owner* (`docs/checklists/p5-chat-manual.md`).
-- [ ] P5-T06 **partial**: provider/model/network mode/retention settings apply to the live runtime; native-dialog JSON history export (new file only), confirmed clear-history with DB/WAL cleanup, and redacted audit view. Typed generated contracts and 9 new Rust / 9 new component tests, including state refresh after partial cleanup failure. Memory, wake word and autostart are explicitly unavailable. FTS/memory acceptance awaits P7 and autostart awaits P5-T07; native save-dialog checks not run. See ADR-0015 and `docs/handoffs/p5-t06.md`.
+- [ ] P5-T06 **partial**: provider/model/network mode/retention settings apply to the live runtime; native-dialog JSON history export (new file only), confirmed clear-history with DB/WAL cleanup, and redacted audit view. Typed generated contracts and 9 new Rust / 9 new component tests, including state refresh after partial cleanup failure. Memory, wake word and autostart are explicitly unavailable. FTS/memory acceptance awaits P7 (autostart shipped in P5-T07); native save-dialog checks not run. See ADR-0015 and `docs/handoffs/p5-t06.md`.
 - [ ] P5-T07..T10: not started.
 
 ## Open decisions
@@ -113,7 +113,7 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 | D-04 | ~~VAD engine~~ **decided: earshot, ADR-0013**; wake-word engine still open | P4-T08 | Re-evaluate VAD on real recordings in P4-T09 |
 | D-05 | Project license | before any public release | No `license` field set yet |
 | D-06 | Web search provider (self-hosted SearXNG, an API with a key, ...) | P7-T01 | The key is kept in the OS secret store |
-| D-07 | **Accept MPL-2.0 `option-ext`** (pulled in by `directories`), **Tauri's MPL-2.0 Servo crates** (`cssparser`, `cssparser-macros`, `selectors`, `dtoa-short`) **and MIT-0 `borrow-or-share`** (pulled in by `jsonschema`)? | before any release | Allowed by a crate-scoped exception in `deny.toml` for now. If rejected: replace `directories` (hand-rolled paths, or Tauri path APIs from P5) and delete the exception. See `docs/p0/licenses.md` |
+| D-07 | **Accept MPL-2.0 `option-ext`** (pulled in by `directories`), **Tauri's MPL-2.0 Servo crates** (`cssparser`, `cssparser-macros`, `selectors`, `dtoa-short`) **MIT-0 `borrow-or-share`** (pulled in by `jsonschema`) **and ISC `libloading`** (Linux tray backend, P5-T07)? | before any release | Allowed by a crate-scoped exception in `deny.toml` for now. If rejected: replace `directories` (hand-rolled paths, or Tauri path APIs from P5) and delete the exception. See `docs/p0/licenses.md` |
 | D-08 | **App identifier** (bundle ID, e.g. `com.<owner>.loki`): `tauri.conf.json` uses the placeholder `dev.loki.placeholder` | before the first installer (P5 gate) | ADR-0002 deferred it to P11; the P5 gate needs an installer. Loki's data dir comes from `directories`, not this ID, so changing it later doesn't move user data |
 
 ## Blockers
@@ -122,8 +122,8 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
   results. Local history now includes the P3 merge (`531d39c`) and work continues on `p5/desktop`.
   Remote CI results were not inspected in this session; the previous "not pushed" note was stale.
 - **P5-T06 later-ticket dependencies**: the current schema has no personal memory or FTS tables;
-  export/delete/FTS verification must be completed when P7 adds them. Autostart is implemented in
-  P5-T07. Do not tick the full acceptance until those integrations and native checks are recorded.
+  export/delete/FTS verification must be completed when P7 adds them. Autostart shipped in P5-T07.
+  Do not tick the full acceptance until those integrations and native checks are recorded.
 
 ## Progress log
 

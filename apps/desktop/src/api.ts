@@ -1,6 +1,7 @@
 // Typed wrappers around Loki's Tauri commands. Types come only from @loki/contracts (generated).
 import type {
   AllowedRootInfo,
+  AutostartStatus,
   AuditEntry,
   AppStatus,
   Capability,
@@ -203,4 +204,16 @@ async function dataMutation<T>(command: string, args?: Record<string, unknown>):
     }
     throw failure;
   }
+}
+
+// ------------------------------------------------------------------ start at login (P5-T07)
+
+/** The OS's actual registration; `enabled` is null when it can't be read (never shown as off). */
+export function getAutostart(): Promise<AutostartStatus> {
+  return invoke<AutostartStatus>("get_autostart");
+}
+
+/** Turns start at login on or off; resolves to the state the OS reports afterwards. */
+export function setAutostart(enabled: boolean): Promise<AutostartStatus> {
+  return invoke<AutostartStatus>("set_autostart", { enabled });
 }

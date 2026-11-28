@@ -30,17 +30,16 @@ pub struct DesktopSettings {
     pub history_days: Option<u32>,
 }
 
-/// Settings with honest availability for controls implemented in later tickets.
+/// Settings with honest availability for controls implemented in later tickets. Start at login
+/// is not here: its real OS state comes from the desktop shell (`AutostartStatus`, P5-T07).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(deny_unknown_fields)]
 pub struct SettingsSnapshot {
-    /// Effective values, including session provider/model overrides.
+    /// Saved values. A per-run provider override is not a setting and is never shown here.
     pub values: DesktopSettings,
     /// Personal memory storage availability.
     pub memory: CapabilityStatus,
-    /// Start-at-login integration availability.
-    pub autostart: CapabilityStatus,
     /// Wake-word integration availability.
     pub wake_word: CapabilityStatus,
 }
@@ -134,7 +133,6 @@ mod tests {
         round_trip(SettingsSnapshot {
             values,
             memory: unavailable.clone(),
-            autostart: unavailable.clone(),
             wake_word: unavailable,
         });
         let history = ExportConversation {

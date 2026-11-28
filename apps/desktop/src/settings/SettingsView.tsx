@@ -1,7 +1,22 @@
-import type { AuditEntry, CapabilityStatus, DesktopSettings, SettingsSnapshot } from "@loki/contracts";
+import type {
+  AuditEntry,
+  AutostartStatus,
+  CapabilityStatus,
+  DesktopSettings,
+  SettingsSnapshot,
+} from "@loki/contracts";
 import { useEffect, useState } from "react";
 
-import { DataControlFailure, clearHistory, exportData, getSettings, listAudit, saveSettings } from "../api";
+import {
+  DataControlFailure,
+  clearHistory,
+  exportData,
+  getAutostart,
+  getSettings,
+  listAudit,
+  saveSettings,
+  setAutostart,
+} from "../api";
 
 function reason(status: CapabilityStatus): string {
   return status.status === "supported" ? "Available" : status.reason;
@@ -156,13 +171,8 @@ export function SettingsView({ onChanged }: { onChanged: () => void }) {
               <button type="submit">Save settings</button>
             </fieldset>
           </form>
-          <p>
-            <label>
-              <input type="checkbox" disabled checked={false} readOnly aria-describedby="autostart-reason" />{" "}
-              Start at login
-            </label>
-          </p>
-          <p id="autostart-reason">{reason(snapshot.autostart)}</p>
+          <AutostartToggle />
+
           <p>
             <label>
               <input type="checkbox" disabled checked={false} readOnly aria-describedby="wake-reason" /> Wake
@@ -262,5 +272,76 @@ export function SettingsView({ onChanged }: { onChanged: () => void }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * Start at login (P5-T07). Off until the user turns it on; shows what the OS actually reports,
+ * and the reason when it can't be used (e.g. development builds). Loki then starts hidden in
+ * the menu bar / tray.
+ */
+function AutostartToggle() {
+  const [status, setStatus] = useState<AutostartStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getAutostart().then(
+      (value) => {
+        if (active) setStatus(value);
+      },
+      (failure: unknown) => {
+        if (active) setError(String(failure));
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const usable = status?.availability.status === "supported" && status.enabled !== null;
+  const toggle = async (enabled: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await setAutostart(enabled));
+    } catch (failure) {
+      setError(String(failure));
+      // Show what the OS reports now, not what was requested.
+      setStatus(await getAutostart().catch(() => status));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hint =
+    status === null
+      ? "Checking…"
+      : status.availability.status === "supported"
+        ? "Loki starts hidden in the menu bar when you log in."
+        : reason(status.availability);
+
+  return (
+    <>
+      <p>
+        <label>
+          <input
+            type="checkbox"
+            disabled={!usable || busy}
+            checked={status?.enabled === true}
+            aria-describedby="autostart-reason"
+            onChange={(event) => void toggle(event.target.checked)}
+          />{" "}
+          Start at login
+        </label>
+      </p>
+      <p id="autostart-reason">{hint}</p>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+    </>
   );
 }

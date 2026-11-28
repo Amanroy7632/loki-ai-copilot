@@ -4,6 +4,7 @@ export type { AppStatus } from "./AppStatus";
 export type { ApprovalId } from "./ApprovalId";
 export type { ApprovalPreview } from "./ApprovalPreview";
 export type { AuditEntry } from "./AuditEntry";
+export type { AutostartStatus } from "./AutostartStatus";
 export type { Capability } from "./Capability";
 export type { CapabilityStatus } from "./CapabilityStatus";
 export type { Conversation } from "./Conversation";

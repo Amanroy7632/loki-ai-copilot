@@ -23,6 +23,8 @@
     "allow-save-settings",
     "allow-clear-history",
     "allow-list-audit",
-    "allow-export-data"
+    "allow-export-data",
+    "allow-get-autostart",
+    "allow-set-autostart"
   ]
 }

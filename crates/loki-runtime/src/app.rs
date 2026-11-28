@@ -136,7 +136,7 @@ pub struct Runtime {
     orchestrator: Orchestrator,
     platform: Arc<dyn Platform>,
     tools: Option<Arc<ToolHost>>,
-    turns: crate::stream::TurnRegistry,
+    turns: Arc<crate::stream::TurnRegistry>,
     approvals: Arc<crate::stream::ApprovalBroker>,
     _logging: Option<LoggingGuard>,
 }
@@ -248,7 +248,7 @@ impl Runtime {
             orchestrator,
             platform,
             tools,
-            turns: crate::stream::TurnRegistry::default(),
+            turns: Arc::default(),
             approvals: Arc::default(),
             _logging: logging,
         })
@@ -473,11 +473,14 @@ impl Runtime {
         text: Option<String>,
         sink: crate::stream::EventSink,
     ) -> Result<(), RuntimeError> {
-        let cancel = self.turns.begin(turn_id).ok_or_else(|| {
-            RuntimeError::InvalidInput(String::from("invalid or duplicate turn id"))
+        let lease = self.turns.enter(turn_id).ok_or_else(|| {
+            RuntimeError::InvalidInput(String::from(
+                "invalid/duplicate turn id or Loki is shutting down",
+            ))
         })?;
-        let result = self.run_turn(conversation, text, cancel, &sink).await;
-        self.turns.end(turn_id);
+        let result = self
+            .run_turn(conversation, text, lease.cancel.clone(), &sink)
+            .await;
         match result {
             Ok(TurnResult::Completed(message)) => sink(loki_core::TurnEvent::Completed { message }),
             Ok(TurnResult::Stopped(message)) => sink(loki_core::TurnEvent::Stopped { message }),
@@ -520,6 +523,13 @@ impl Runtime {
             (None, None) => Err(RuntimeError::InvalidInput(String::from(
                 "a new conversation needs a message",
             ))),
+        }
+    }
+
+    /// Independent control handle, usable even while front ends hold a runtime write lock.
+    pub fn lifecycle_control(&self) -> crate::LifecycleControl {
+        crate::LifecycleControl {
+            turns: Arc::clone(&self.turns),
         }
     }
 

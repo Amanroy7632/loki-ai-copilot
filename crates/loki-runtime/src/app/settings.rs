@@ -30,7 +30,6 @@ impl Runtime {
             memory: unavailable(
                 "Personal memory is not available yet; chat history is stored separately.",
             ),
-            autostart: unavailable("Start at login is not available in this build."),
             wake_word: unavailable("Wake-word listening is not available in this build."),
         }
     }

@@ -24,6 +24,8 @@ fn main() {
             "clear_history",
             "list_audit",
             "export_data",
+            "get_autostart",
+            "set_autostart",
         ]));
     if let Err(error) = tauri_build::try_build(attributes) {
         panic!("tauri build configuration failed: {error:#}");

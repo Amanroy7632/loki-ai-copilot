@@ -5,17 +5,30 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod lifecycle;
 mod settings;
 
 use tauri::Manager;
 
 fn main() {
     let app = tauri::Builder::default()
+        // First: a second process must never open or mutate the runtime/database.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            lifecycle::show(app)
+        }))
+        // Inert until the explicit Settings toggle. OS state is read through Loki commands.
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name("Loki")
+                .arg("--autostart")
+                .build(),
+        )
         // Registered for the Rust-side folder picker only; no capability grants `dialog:` to the
         // webview, so its own JS commands stay denied.
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let state = commands::AppState::open()?;
+            lifecycle::install(app.handle(), &state)?;
             app.manage(state);
             Ok(())
         })
@@ -40,10 +53,15 @@ fn main() {
             settings::clear_history,
             settings::list_audit,
             settings::export_data,
+            lifecycle::get_autostart,
+            lifecycle::set_autostart,
         ])
-        .run(tauri::generate_context!());
-    if let Err(error) = app {
-        eprintln!("Loki could not start: {error}");
-        std::process::exit(1);
+        .build(tauri::generate_context!());
+    match app {
+        Ok(app) => app.run(lifecycle::run_event),
+        Err(error) => {
+            eprintln!("Loki could not start: {error}");
+            std::process::exit(1);
+        }
     }
 }

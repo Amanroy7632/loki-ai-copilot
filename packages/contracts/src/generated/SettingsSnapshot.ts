@@ -3,21 +3,18 @@ import type { CapabilityStatus } from "./CapabilityStatus";
 import type { DesktopSettings } from "./DesktopSettings";
 
 /**
- * Settings with honest availability for controls implemented in later tickets.
+ * Settings with honest availability for controls implemented in later tickets. Start at login
+ * is not here: its real OS state comes from the desktop shell (`AutostartStatus`, P5-T07).
  */
 export type SettingsSnapshot = { 
 /**
- * Effective values, including session provider/model overrides.
+ * Saved values. A per-run provider override is not a setting and is never shown here.
  */
 values: DesktopSettings, 
 /**
  * Personal memory storage availability.
  */
 memory: CapabilityStatus, 
-/**
- * Start-at-login integration availability.
- */
-autostart: CapabilityStatus, 
 /**
  * Wake-word integration availability.
  */

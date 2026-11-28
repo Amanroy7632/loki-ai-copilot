@@ -135,7 +135,9 @@ New generated payloads in `loki-core::settings` (existing shapes unchanged):
 ```text
 SettingsProvider = Mock | Ollama                    serialized snake_case
 DesktopSettings { provider, model_id?, network_mode, history_days? }
-SettingsSnapshot { values: DesktopSettings, memory, autostart, wake_word: CapabilityStatus }
+SettingsSnapshot { values: DesktopSettings, memory, wake_word: CapabilityStatus }
+                                                    values are the SAVED settings, never a per-run
+                                                    override; autostart moved to AutostartStatus
 ExportConversation { conversation: Conversation, messages: Message[] }
 DataExport { version: 1, exported_at, history: ExportConversation[], memory_available, memories }
 AuditEntry { id, tool, status, summary?, created_at }  redacted summary, no raw request/output
@@ -161,6 +163,28 @@ Save/clear errors carry `DataControlError`; other commands retain their existing
 If a cleanup failure happens after saving/deleting, `state_changed` is true and the desktop
 discards cached chat and reloads provider status while displaying the error. Busy/validation
 failures set it false, preserving any active conversation.
+
+Provider changes (fix, 2026-11-28): `settings().values` shows the saved provider and model, not
+this run's override (`LOKI_PROVIDER`, `--provider`, or the labelled mock before onboarding).
+`update_settings` switches the active provider only when provider or model changed, so saving
+an unrelated setting never persists an override. A retention failure at startup is a startup
+warning (retried on the next start or save), never a failed start.
+
+## Desktop lifecycle API (P5-T07)
+
+```text
+AutostartStatus { enabled: bool?, availability: CapabilityStatus }   enabled null = unknown, never "off"
+```
+
+Desktop commands: `get_autostart`, `set_autostart(enabled)` (returns the state the OS reports
+afterwards; an OS that didn't apply the change is an error). Unavailable in development builds
+and with `LOKI_DATA_DIR` / `LOKI_PROVIDER` overrides, so a dev run never registers a login item.
+Runtime: `Runtime::lifecycle_control() -> LifecycleControl` (usable while a turn holds the
+runtime lock): `emergency_stop()` cancels running turns and pending approvals but allows new
+turns; `begin_shutdown()` also refuses new turns; `wait_for_idle(budget) -> bool`.
+`autostart::AutostartService` wraps an `AutostartBackend` (OS adapter; tests use `MockAutostart`).
+The tray menu (show/hide, emergency stop, quit; mute disabled until voice ships), close-to-hide,
+the single-instance lock and quit-drains-work (2 s budget) are desktop-shell wiring.
 
 ## Initial tool registry
 

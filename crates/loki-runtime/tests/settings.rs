@@ -33,10 +33,6 @@ async fn mock_settings_apply_immediately_persist_and_report_unavailable_features
         CapabilityStatus::Unavailable { .. }
     ));
     assert!(matches!(
-        snapshot.autostart,
-        CapabilityStatus::Unavailable { .. }
-    ));
-    assert!(matches!(
         snapshot.wake_word,
         CapabilityStatus::Unavailable { .. }
     ));

@@ -52,3 +52,13 @@ See ADR-0014. Each version is at least two weeks old, pinned or locked exactly.
 | tauri-plugin | 2.7.2 | Apache-2.0 OR MIT | Build helper; locked below 2.7.3/2.7.4 (too new) |
 
 `cargo deny check` passes with no new exceptions.
+
+## P5-T07 tray, single instance and autostart (2026-11-28)
+
+Direct: tauri `tray-icon` feature; tauri-plugin-single-instance 2.5.5 (2026-10-28) and
+tauri-plugin-autostart 2.7.0 (2026-10-01), both Apache-2.0 OR MIT. They bring 41 transitive
+crates (zbus/async-io family for Linux D-Bus, auto-launch, smappservice-rs, windows-registry and
+others), all MIT, Apache-2.0, Zlib or combinations. Two were less than two weeks old and are
+locked to older compatible releases: **nix 0.31.3** (not 0.31.4) and **zcheapstr 1.2.0** (not
+1.4.0). New license exception: **ISC `libloading` 0.7.4** (Linux tray backend via
+libappindicator), crate-scoped in `deny.toml`, pending owner confirmation under D-07.

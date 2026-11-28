@@ -5,6 +5,7 @@
 // carries the arguments that were shown.
 import type {
   AllowedRootInfo,
+  AutostartStatus,
   AppStatus,
   AuditEntry,
   Conversation,
@@ -45,6 +46,10 @@ export interface FakeBackendOptions {
 
 export interface FakeBackend {
   settings: SettingsSnapshot;
+  /** What the OS reports for start at login. */
+  autostart: AutostartStatus;
+  /** The next autostart change fails with this message (e.g. the OS refused). */
+  autostartError: string | null;
   audit: AuditEntry[];
   busy: boolean;
   exportPicked: boolean;
@@ -102,10 +107,11 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
   const stopped = new Set<string>();
 
   const backend: FakeBackend = {
+    autostart: { enabled: false, availability: { status: "supported" } },
+    autostartError: null,
     settings: {
       values: { provider: "mock", model_id: null, network_mode: "local_only", history_days: null },
       memory: { status: "unavailable", reason: "Personal memory is not available yet." },
-      autostart: { status: "unavailable", reason: "Start at login is not available in this build." },
       wake_word: { status: "unavailable", reason: "Wake-word listening is not available in this build." },
     },
     audit: [],
@@ -231,6 +237,16 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
           provider: backend.settings.values.provider,
           model: backend.settings.values.model_id,
         };
+      case "get_autostart":
+        return structuredClone(backend.autostart);
+      case "set_autostart": {
+        if (backend.autostart.availability.status !== "supported") {
+          throw new Error("Start at login is not available.");
+        }
+        if (backend.autostartError) throw new Error(backend.autostartError);
+        backend.autostart = { ...backend.autostart, enabled: args.enabled as boolean };
+        return structuredClone(backend.autostart);
+      }
       case "get_settings":
         return structuredClone(backend.settings);
       case "save_settings": {

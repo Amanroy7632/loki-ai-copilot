@@ -20,7 +20,6 @@ describe("SettingsView with mock IPC", () => {
     await setup();
     expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("mock");
     expect(screen.getByRole("combobox", { name: "Network mode" })).toHaveValue("local_only");
-    expect(screen.getByRole("checkbox", { name: "Start at login" })).toBeDisabled();
     expect(screen.getByRole("checkbox", { name: "Wake word" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Delete memory" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Delete memory" })).toHaveAccessibleDescription(
@@ -154,4 +153,47 @@ describe("SettingsView with mock IPC", () => {
       expect(screen.queryByText("Private title")).not.toBeInTheDocument();
     },
   );
+});
+
+describe("Start at login (P5-T07)", () => {
+  it("is off until the user turns it on, and shows the state the OS reports", async () => {
+    const { backend, user } = await setup();
+    const box = await screen.findByRole("checkbox", { name: "Start at login" });
+    await waitFor(() => expect(box).toBeEnabled());
+    expect(box).not.toBeChecked();
+    expect(backend.calls.some((c) => c.cmd === "set_autostart")).toBe(false);
+    expect(box).toHaveAccessibleDescription(/starts hidden in the menu bar/);
+
+    await user.click(box);
+    await waitFor(() => expect(box).toBeChecked());
+    expect(backend.calls.find((c) => c.cmd === "set_autostart")?.args).toEqual({ enabled: true });
+    expect(backend.autostart.enabled).toBe(true);
+    await user.click(box);
+    await waitFor(() => expect(box).not.toBeChecked());
+  });
+
+  it("is disabled with the reason when it can't be used", async () => {
+    const backend = installFakeBackend();
+    backend.autostart = {
+      enabled: null,
+      availability: { status: "unavailable", reason: "Available in installed release builds only." },
+    };
+    render(<SettingsView onChanged={() => undefined} />);
+    const box = await screen.findByRole("checkbox", { name: "Start at login" });
+    await waitFor(() =>
+      expect(box).toHaveAccessibleDescription("Available in installed release builds only."),
+    );
+    expect(box).toBeDisabled();
+    expect(box).not.toBeChecked();
+  });
+
+  it("an OS refusal is shown and the box keeps the real state", async () => {
+    const { backend, user } = await setup();
+    backend.autostartError = "the OS did not apply the requested start-at-login setting";
+    const box = await screen.findByRole("checkbox", { name: "Start at login" });
+    await waitFor(() => expect(box).toBeEnabled());
+    await user.click(box);
+    expect(await screen.findByText(/did not apply/)).toBeInTheDocument();
+    expect(box).not.toBeChecked();
+  });
 });
