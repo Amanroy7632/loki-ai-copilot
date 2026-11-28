@@ -30,6 +30,8 @@ use serde::Serialize;
 
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(target_os = "macos")]
+mod macos_mic;
 pub mod mock;
 pub mod portable;
 pub mod system;
@@ -111,6 +113,28 @@ pub trait Platform: Send + Sync {
 
     /// OS, CPU, RAM and disk summary.
     fn system_info(&self) -> Result<SystemInfo, PlatformError>;
+
+    /// Asks the OS for the permission behind `capability`, showing the system's own prompt if
+    /// the user was never asked, and returns the status afterwards. Only called when the user
+    /// turns the capability on. It never works around a refusal: a denied permission stays
+    /// denied until the user changes it in the OS settings. Default: no OS permission is
+    /// involved, so this is the current status.
+    fn request_permission(&self, capability: Capability) -> CapabilityStatus {
+        self.capabilities()
+            .get(&capability)
+            .cloned()
+            .unwrap_or(CapabilityStatus::Unavailable {
+                reason: String::from("not reported by this platform"),
+            })
+    }
+
+    /// Opens the OS settings page where the user controls this capability's permission.
+    fn open_permission_settings(&self, capability: Capability) -> Result<(), PlatformError> {
+        Err(PlatformError::Unavailable(format!(
+            "no OS settings page for {} here",
+            capability.as_str()
+        )))
+    }
 }
 
 /// The adapter for the OS this binary was built for.
@@ -138,7 +162,10 @@ pub(crate) fn later_phase_statuses() -> BTreeMap<Capability, CapabilityStatus> {
             Capability::Network,
             unavailable("internet tools arrive in P7"),
         ),
-        (Capability::Microphone, unavailable("voice arrives in P4")),
+        (
+            Capability::Microphone,
+            unavailable("microphone permission handling for this OS arrives in P6"),
+        ),
         (
             Capability::Notifications,
             unavailable("notifications arrive in P5"),

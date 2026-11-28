@@ -1,3 +1,4 @@
+import type { ProviderCheck } from "@loki/contracts";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -195,5 +196,94 @@ describe("Start at login (P5-T07)", () => {
     await user.click(box);
     expect(await screen.findByText(/did not apply/)).toBeInTheDocument();
     expect(box).not.toBeChecked();
+  });
+});
+
+describe("Model picker: provider check and installed models", () => {
+  const installed: ProviderCheck = {
+    reachable: true,
+    detail: null,
+    models: [
+      {
+        id: "bonsai-2:4b",
+        size_bytes: 1_600_000_000,
+        reviewed: true,
+        display_name: "Bonsai 2 4B",
+        license: "Apache-2.0",
+      },
+      {
+        id: "llama-custom:7b",
+        size_bytes: 4_100_000_000,
+        reviewed: false,
+        display_name: null,
+        license: null,
+      },
+    ],
+    hidden_cloud_models: 1,
+    suggested: "bonsai-2:4b",
+  };
+
+  async function renderWith(check: ProviderCheck | undefined, model: string | null) {
+    const backend = installFakeBackend(check ? { providerCheck: check } : {});
+    backend.settings.values = { ...backend.settings.values, provider: "ollama", model_id: model };
+    const user = userEvent.setup();
+    render(<SettingsView onChanged={() => undefined} />);
+    await screen.findByRole("combobox", { name: "Provider" });
+    return { backend, user };
+  }
+
+  it("lists the installed models, auto-selects the suggested one, and saves it only on Save", async () => {
+    const { backend, user } = await renderWith(installed, null);
+    const picker = await screen.findByRole("combobox", { name: "Local model" });
+    expect(screen.getByText("Ollama is running · 2 local models installed")).toBeInTheDocument();
+    expect(picker).toHaveValue("bonsai-2:4b");
+    expect(
+      screen.getByRole("option", { name: /bonsai-2:4b — Bonsai 2 4B · 1\.6 GB · reviewed/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /llama-custom:7b — 4\.1 GB · not reviewed by Loki/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/1 cloud model is hidden/)).toBeInTheDocument();
+    expect(screen.getByText(/selected it\. Save settings to use it/)).toBeInTheDocument();
+    expect(backend.calls.some((c) => c.cmd === "save_settings")).toBe(false);
+
+    await user.selectOptions(picker, "llama-custom:7b");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() =>
+      expect(backend.calls.find((c) => c.cmd === "save_settings")?.args).toMatchObject({
+        settings: { provider: "ollama", model_id: "llama-custom:7b" },
+      }),
+    );
+  });
+
+  it("keeps the saved model when it is installed", async () => {
+    await renderWith({ ...installed, suggested: "llama-custom:7b" }, "llama-custom:7b");
+    expect(await screen.findByRole("combobox", { name: "Local model" })).toHaveValue("llama-custom:7b");
+    expect(screen.queryByText(/selected it/)).not.toBeInTheDocument();
+  });
+
+  it("replaces a saved model that isn't installed with the suggested one, and says so", async () => {
+    await renderWith(installed, "qwen3:8b");
+    expect(await screen.findByRole("combobox", { name: "Local model" })).toHaveValue("bonsai-2:4b");
+    expect(screen.getByText(/isn't installed, so/)).toHaveTextContent(
+      "qwen3:8b isn't installed, so bonsai-2:4b was selected instead. Save settings to use it.",
+    );
+  });
+
+  it("when Ollama isn't reachable, explains why, allows typing a tag, and can check again", async () => {
+    const { backend, user } = await renderWith(undefined, null);
+    expect(await screen.findByText("Ollama isn't reachable")).toBeInTheDocument();
+    expect(screen.getByText(/Can't reach Ollama/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Local model tag")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(backend.calls.filter((c) => c.cmd === "check_provider")).toHaveLength(2));
+  });
+
+  it("the mock provider needs no model and runs no check", async () => {
+    const backend = installFakeBackend({ providerCheck: installed });
+    render(<SettingsView onChanged={() => undefined} />);
+    expect(await screen.findByText(/canned, clearly labelled replies/)).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Local model" })).not.toBeInTheDocument();
+    expect(backend.calls.some((c) => c.cmd === "check_provider")).toBe(false);
   });
 });

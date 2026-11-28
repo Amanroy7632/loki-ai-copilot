@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-disable-capability"
+description = "Enables the disable_capability command without any pre-configured scope."
+commands.allow = ["disable_capability"]
+
+[[permission]]
+identifier = "deny-disable-capability"
+description = "Denies the disable_capability command without any pre-configured scope."
+commands.deny = ["disable_capability"]

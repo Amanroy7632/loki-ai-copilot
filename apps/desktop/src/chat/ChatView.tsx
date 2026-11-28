@@ -24,7 +24,13 @@ import { MessageList } from "./MessageList";
  * this holds only view state and reloads what the runtime stored after every turn, so the screen
  * always matches the database.
  */
-export function ChatView() {
+export interface ChatViewProps {
+  /** Shown under the composer, e.g. "ollama · bonsai-2:4b". */
+  modelLabel?: string | undefined;
+}
+
+export function ChatView({ modelLabel }: ChatViewProps = {}) {
+  const [draft, setDraft] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<ConversationId | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -121,6 +127,11 @@ export function ChatView() {
     composer.current?.focus();
   };
 
+  const onSuggest = (text: string) => {
+    setDraft(text);
+    composer.current?.focus();
+  };
+
   const onRename = async (id: ConversationId, title: string) => {
     const updated = await renameConversation(id, title);
     setConversations((list) => list.map((c) => (c.id === id ? updated : c)));
@@ -154,7 +165,13 @@ export function ChatView() {
         onDelete={onDelete}
       />
       <div className="chat-main">
+        <header className="chat-header">
+          <h2 className="chat-title">
+            {conversations.find((c) => c.id === selected)?.title ?? "New conversation"}
+          </h2>
+        </header>
         <MessageList
+          onSuggest={streaming ? undefined : onSuggest}
           messages={messages}
           pendingUserText={pendingUserText}
           streamingText={streaming ? (turn?.text ?? "") : null}
@@ -179,6 +196,9 @@ export function ChatView() {
         )}
         <Composer
           ref={composer}
+          value={draft}
+          onChange={setDraft}
+          hint={modelLabel}
           streaming={streaming}
           canRetry={canRetry}
           onSend={onSend}

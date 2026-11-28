@@ -43,6 +43,24 @@ pub struct VoiceStatus {
     pub push_to_talk: CapabilityStatus,
 }
 
+/// The result of a microphone test (Permissions screen): Loki listened for a few seconds,
+/// measured the level, and kept nothing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(deny_unknown_fields)]
+pub struct MicTestResult {
+    /// How long the microphone was open, in milliseconds.
+    pub duration_ms: u32,
+    /// Loudest sample, 0..1.
+    pub peak: f32,
+    /// Average loudness (RMS), 0..1.
+    pub level: f32,
+    /// Something louder than silence was heard.
+    pub heard_sound: bool,
+    /// A stop, mute or quit ended the test early.
+    pub stopped_early: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -67,7 +67,9 @@ describe("App sections", () => {
     const nav = await screen.findByRole("navigation", { name: "Sections" });
     expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-current", "page");
     await user.click(screen.getByRole("button", { name: "Permissions" }));
-    expect(await screen.findByRole("heading", { name: "Permissions", level: 2 })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Privacy & Permissions", level: 2 }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Permissions" })).toHaveAttribute("aria-current", "page");
     // The chat is hidden, not gone: a running reply or pending approval survives.
     expect(screen.getByRole("textbox", { name: "Message", hidden: true })).not.toBeVisible();

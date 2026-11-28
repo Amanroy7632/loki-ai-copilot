@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Shown by macOS in its microphone permission prompt. Required: macOS ends an app that uses
+       the microphone without it. Tauri merges this file into the bundle and embeds it in dev. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Loki listens only while you hold push-to-talk or run a microphone test. Audio stays on this Mac and is never saved.</string>
+</dict>
+</plist>

@@ -101,6 +101,42 @@ pub struct DataControlError {
     pub state_changed: bool,
 }
 
+/// A model installed in the local Ollama, as Settings lists it (cloud models are never listed).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(deny_unknown_fields)]
+pub struct LocalModel {
+    /// Ollama tag, e.g. `bonsai-2:4b`.
+    pub id: String,
+    /// Size on disk in bytes.
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
+    pub size_bytes: u64,
+    /// On Loki's reviewed list (license and behaviour checked); unreviewed models still work.
+    pub reviewed: bool,
+    /// Human-readable name for reviewed models.
+    pub display_name: Option<String>,
+    /// SPDX license for reviewed models.
+    pub license: Option<String>,
+}
+
+/// Result of checking the local model server from Settings (P5 UI): is it reachable, which
+/// models are installed, and which one Loki would pick.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(deny_unknown_fields)]
+pub struct ProviderCheck {
+    /// The Ollama server answered.
+    pub reachable: bool,
+    /// Why it isn't usable, and how to fix it.
+    pub detail: Option<String>,
+    /// Installed local models: reviewed ones first (in Loki's preference order), then the rest.
+    pub models: Vec<LocalModel>,
+    /// Installed cloud models that were left out (Loki never uses cloud inference).
+    pub hidden_cloud_models: u32,
+    /// The model to preselect: the saved one if it is installed, else the preferred installed one.
+    pub suggested: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +148,23 @@ mod tests {
         assert_eq!(serde_json::from_value::<T>(json.clone()).unwrap(), value);
         json["unexpected"] = serde_json::json!(true);
         assert!(serde_json::from_value::<T>(json).is_err());
+    }
+
+    #[test]
+    fn provider_check_round_trips_and_rejects_extra_fields() {
+        round_trip(ProviderCheck {
+            reachable: true,
+            detail: None,
+            models: vec![LocalModel {
+                id: "bonsai-2:4b".into(),
+                size_bytes: 1_600_000_000,
+                reviewed: true,
+                display_name: Some("Bonsai 2 4B".into()),
+                license: Some("Apache-2.0".into()),
+            }],
+            hidden_cloud_models: 1,
+            suggested: Some("bonsai-2:4b".into()),
+        });
     }
 
     #[test]

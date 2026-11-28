@@ -90,3 +90,12 @@ pub async fn export_data(
         .map_err(|error| error.to_string())?;
     Ok(true)
 }
+
+/// Checks the local model server: reachable, installed models (no cloud models) and the model
+/// to preselect. Talks only to the configured loopback Ollama; never downloads.
+#[tauri::command]
+pub async fn check_provider(
+    state: tauri::State<'_, AppState>,
+) -> Result<loki_core::ProviderCheck, String> {
+    Ok(state.runtime.read().await.check_provider().await)
+}

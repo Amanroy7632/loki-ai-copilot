@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { appStatus } from "./api";
 import { ChatView } from "./chat/ChatView";
+import { ChatIcon, LogoMark, SettingsIcon, ShieldIcon } from "./icons";
 import { PermissionsView } from "./permissions/PermissionsView";
 import { SettingsView } from "./settings/SettingsView";
 import { VoiceBar } from "./voice/VoiceBar";
@@ -43,57 +44,77 @@ export function App() {
     };
   }, []);
 
+  const sections = [
+    { name: "chat", label: "Chat", Icon: ChatIcon },
+    { name: "permissions", label: "Permissions", Icon: ShieldIcon },
+    { name: "settings", label: "Settings", Icon: SettingsIcon },
+  ] as const;
+
   return (
-    <main className="app">
-      <header className="app-header">
-        <h1>Loki</h1>
-        {load.kind === "loading" && <StatusPill tone="neutral" label="Starting…" />}
-        {load.kind === "error" && <StatusPill tone="bad" label="Runtime unavailable" detail={load.message} />}
+    <div className="shell">
+      <aside className="rail">
+        <div className="brand">
+          <LogoMark />
+          <h1>Loki</h1>
+        </div>
         {load.kind === "ready" && (
-          <StatusPill
-            tone={load.status.ready ? "good" : "bad"}
-            label={providerLabel(load.status)}
-            detail={load.status.detail ?? undefined}
-          />
-        )}
-        {load.kind === "ready" && <VoiceBar />}
-      </header>
-      {load.kind === "ready" && (
-        <p className="app-meta">
-          Version {load.status.version} · Tools {load.status.tools_enabled ? "on" : "off"}
-        </p>
-      )}
-      {load.kind === "ready" && (
-        <>
           <nav className="sections" aria-label="Sections">
-            {(["chat", "permissions", "settings"] as const).map((name) => (
+            {sections.map(({ name, label, Icon }) => (
               <button
                 key={name}
                 type="button"
+                className="rail-item"
                 aria-current={section === name ? "page" : undefined}
                 onClick={() => setSection(name)}
               >
-                {name === "chat" ? "Chat" : name === "permissions" ? "Permissions" : "Settings"}
+                <Icon />
+                <span>{label}</span>
               </button>
             ))}
           </nav>
-          {/* Chat stays mounted so a running reply or a pending approval survives switching. */}
-          <div className="section" hidden={section !== "chat"}>
-            <ChatView key={chatVersion} />
-          </div>
-          {section === "permissions" && (
-            <div className="section">
-              <PermissionsView />
-            </div>
+        )}
+        {load.kind === "ready" && (
+          <p className="app-meta rail-foot">
+            <span>Version {load.status.version}</span>
+            <span>Tools {load.status.tools_enabled ? "on" : "off"}</span>
+          </p>
+        )}
+      </aside>
+      <main className="app">
+        <header className="topbar">
+          {load.kind === "loading" && <StatusPill tone="neutral" label="Starting…" />}
+          {load.kind === "error" && (
+            <StatusPill tone="bad" label="Runtime unavailable" detail={load.message} />
           )}
-          {section === "settings" && (
-            <div className="section">
-              <SettingsView onChanged={settingsChanged} />
-            </div>
+          {load.kind === "ready" && (
+            <StatusPill
+              tone={load.status.ready ? "good" : "bad"}
+              label={providerLabel(load.status)}
+              detail={load.status.detail ?? undefined}
+            />
           )}
-        </>
-      )}
-    </main>
+          {load.kind === "ready" && <VoiceBar />}
+        </header>
+        {load.kind === "ready" && (
+          <>
+            {/* Chat stays mounted so a running reply or a pending approval survives switching. */}
+            <div className="section" hidden={section !== "chat"}>
+              <ChatView key={chatVersion} modelLabel={providerLabel(load.status)} />
+            </div>
+            {section === "permissions" && (
+              <div className="section section-page">
+                <PermissionsView />
+              </div>
+            )}
+            {section === "settings" && (
+              <div className="section section-page">
+                <SettingsView onChanged={settingsChanged} />
+              </div>
+            )}
+          </>
+        )}
+      </main>
+    </div>
   );
 }
 

@@ -173,3 +173,87 @@ impl Runtime {
             .collect())
     }
 }
+
+impl Runtime {
+    /// Checks the local model server for Settings: reachable or not (with how to fix it), the
+    /// installed models, and the one to preselect. Only talks to the configured loopback Ollama
+    /// (network policy), never downloads, and never lists cloud models.
+    pub async fn check_provider(&self) -> loki_core::ProviderCheck {
+        match self.installed_models().await {
+            Ok(installed) => {
+                let (_, recommendation) = self.recommend_models();
+                let preferred: Vec<String> = recommendation
+                    .primary
+                    .iter()
+                    .chain(&recommendation.alternatives)
+                    .map(|entry| entry.id.clone())
+                    .collect();
+                provider_check_from(&installed, &preferred, self.config.model_id.as_deref())
+            }
+            Err(error) => loki_core::ProviderCheck {
+                reachable: false,
+                detail: Some(format!(
+                    "Can't reach Ollama at {} ({error}). Start it with ./scripts/ollama-serve.sh or the Ollama app, then check again.",
+                    self.config.ollama.base_url
+                )),
+                models: Vec::new(),
+                hidden_cloud_models: 0,
+                suggested: None,
+            },
+        }
+    }
+}
+
+/// Builds the Settings view of installed models. Order: models recommended for this machine,
+/// then other reviewed models (allowlist order), then unreviewed ones by name. The suggestion is
+/// the saved model if it is installed, else the first in that order.
+pub fn provider_check_from(
+    installed: &[loki_llm::InstalledModel],
+    preferred: &[String],
+    saved: Option<&str>,
+) -> loki_core::ProviderCheck {
+    let allowlist = models::allowlist();
+    let rank = |id: &str| {
+        preferred
+            .iter()
+            .position(|p| p == id)
+            .map(|i| (0, i))
+            .or_else(|| allowlist.iter().position(|e| e.id == id).map(|i| (1, i)))
+            .unwrap_or((2, 0))
+    };
+    let hidden_cloud_models = installed
+        .iter()
+        .filter(|m| models::is_cloud_model(&m.name))
+        .count();
+    let mut models: Vec<loki_core::LocalModel> = installed
+        .iter()
+        .filter(|m| !models::is_cloud_model(&m.name))
+        .map(|m| {
+            let entry = models::find(&m.name);
+            loki_core::LocalModel {
+                id: m.name.clone(),
+                size_bytes: m.size,
+                reviewed: entry.is_some(),
+                display_name: entry.as_ref().map(|e| e.display_name.clone()),
+                license: entry.map(|e| e.license),
+            }
+        })
+        .collect();
+    models.sort_by(|a, b| rank(&a.id).cmp(&rank(&b.id)).then_with(|| a.id.cmp(&b.id)));
+    let suggested = saved
+        .filter(|id| models.iter().any(|m| m.id == *id))
+        .map(str::to_owned)
+        .or_else(|| models.first().map(|m| m.id.clone()));
+    let detail = models.is_empty().then(|| {
+        String::from(
+            "Ollama is running but has no local models. Download a reviewed one with `loki models pull bonsai-2:4b` (the license is shown first).",
+        )
+    });
+    loki_core::ProviderCheck {
+        reachable: true,
+        detail,
+        models,
+        hidden_cloud_models: u32::try_from(hidden_cloud_models).unwrap_or(u32::MAX),
+        suggested,
+    }
+}
