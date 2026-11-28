@@ -20,7 +20,32 @@ Loki is a local-first, voice-enabled personal copilot. It talks with you, rememb
 
 What works right now: the `loki` CLI chatting with a **local model through Ollama**, with
 streaming, stop, retry and saved history. It works fully offline once a model is downloaded and
-never uses cloud inference. Tools, voice and the desktop app come in later phases.
+never uses cloud inference. An early desktop chat window (P5) also runs; tools, voice and the rest
+of the desktop app come in later phases.
+
+### Quick start: everything with one command
+
+`scripts/dev.sh` starts Ollama (loopback only, cloud features off) if it isn't running, installs
+the JS dependencies if needed, and opens the desktop app with hot reload. Ctrl+C stops everything
+it started; an Ollama server that was already running is left alone. Data goes into `.dev-data/`
+in the repo (gitignored), so your normal Loki data isn't touched.
+
+```sh
+pnpm dev                                       # = ./scripts/dev.sh: desktop app + Ollama
+./scripts/dev.sh --model bonsai-2:4b           # also select that model for .dev-data/
+./scripts/dev.sh --model bonsai-2:4b --pull    # download it first if missing (license shown first)
+pnpm dev:mock                                  # no Ollama: the labelled mock model
+pnpm dev:cli                                   # the terminal chat instead of the window
+./scripts/dev.sh --fresh                       # start from an empty .dev-data/ (deletes only that)
+./scripts/dev.sh --real-data                   # use your normal per-user Loki data
+./scripts/dev.sh --check                       # print the plan, start nothing
+```
+
+Flags combine, e.g. `./scripts/dev.sh --cli --fresh --model bonsai-2:4b`. The first run compiles
+the Rust workspace, which takes a few minutes. Run it from Git Bash on Windows. With
+`LOKI_PROVIDER=mock` set, the desktop app always uses the mock model.
+
+The steps below do the same by hand, with the installed `loki` command.
 
 ### 1. One-time setup
 
@@ -121,7 +146,7 @@ loki/
   fixtures/              test data (fake documents, scripted model replies)
   tests/                 cross-crate integration and security tests
   spikes/                throwaway P0 experiments, outside the workspace
-  scripts/               check.sh / check.ps1, gen-contracts.sh, ollama-serve.sh
+  scripts/               check.sh / check.ps1, dev.sh, gen-contracts.sh, ollama-serve.sh
   docs/                  the plan, architecture, contracts, phases, ADRs
 ```
 
@@ -133,6 +158,7 @@ These need the Rust toolchain. Install it as described in [docs/DEVELOPMENT.md](
 ./scripts/check.sh            # macOS / Linux: fmt check + clippy + tests
 pwsh ./scripts/check.ps1      # Windows: the same checks
 cargo run -p loki-cli         # headless harness
+./scripts/dev.sh              # local end-to-end run: Ollama + desktop app (--cli, --mock)
 ```
 
 ## Documentation map

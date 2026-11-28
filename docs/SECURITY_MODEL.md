@@ -17,6 +17,7 @@
 
 - A wake word is **not authentication**.
 - A sensitive action needs a visible on-screen confirmation, or device authentication on mobile. Ambient audio is never accepted as approval.
+- The desktop approval dialog (P5-T04) shows every argument with invisible and bidi-control characters made visible, starts with focus on Deny, and ignores auto-repeated keys. For a Sensitive action the keyboard can only approve after the user moved focus to Approve. The dialog sends back the arguments it showed, and the runtime refuses a "yes" for different arguments or after expiry.
 - A global mute and an emergency stop are always available: tray, UI, and a keyboard shortcut.
 - No hidden listening or capture. A listening indicator is always shown while the microphone is open.
 

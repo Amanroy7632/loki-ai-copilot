@@ -25,7 +25,7 @@ pub mod task;
 pub mod time;
 pub mod tool;
 
-pub use api::AppStatus;
+pub use api::{AppStatus, ApprovalPreview, TurnEvent};
 pub use capability::{Capability, CapabilityStatus};
 pub use decision::Decision;
 pub use grant::{ANY_SCOPE, Grant};

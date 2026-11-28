@@ -63,6 +63,23 @@ impl Database {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Renames a conversation. Returns the updated row, or `None` if it doesn't exist.
+    /// `updated_at` is unchanged: renaming isn't activity, so the list order stays put.
+    pub fn rename_conversation(
+        &self,
+        id: &ConversationId,
+        title: &str,
+    ) -> Result<Option<Conversation>, MemoryError> {
+        let changed = self.conn.execute(
+            "UPDATE conversations SET title = ?2 WHERE id = ?1",
+            params![id.as_str(), title],
+        )?;
+        if changed == 0 {
+            return Ok(None);
+        }
+        self.get_conversation(id)
+    }
+
     /// Deletes a conversation and, through `ON DELETE CASCADE`, all of its messages.
     /// Returns `false` if it didn't exist.
     pub fn delete_conversation(&self, id: &ConversationId) -> Result<bool, MemoryError> {

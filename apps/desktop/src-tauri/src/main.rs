@@ -15,7 +15,17 @@ fn main() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::app_status])
+        .invoke_handler(tauri::generate_handler![
+            commands::app_status,
+            commands::send_message,
+            commands::retry_reply,
+            commands::stop_reply,
+            commands::respond_approval,
+            commands::list_conversations,
+            commands::get_messages,
+            commands::rename_conversation,
+            commands::delete_conversation,
+        ])
         .run(tauri::generate_context!());
     if let Err(error) = app {
         eprintln!("Loki could not start: {error}");

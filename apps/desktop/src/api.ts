@@ -1,0 +1,113 @@
+// Typed wrappers around Loki's Tauri commands. Types come only from @loki/contracts (generated).
+import type { AppStatus, Conversation, ConversationId, JsonValue, Message, TurnEvent } from "@loki/contracts";
+import { Channel, invoke } from "@tauri-apps/api/core";
+
+export function appStatus(): Promise<AppStatus> {
+  return invoke<AppStatus>("app_status");
+}
+
+export function listConversations(): Promise<Conversation[]> {
+  return invoke<Conversation[]>("list_conversations");
+}
+
+export function getMessages(conversationId: ConversationId): Promise<Message[]> {
+  return invoke<Message[]>("get_messages", { conversationId });
+}
+
+/** A fresh, unguessable turn ID, used to stop the turn later. */
+export function newTurnId(): string {
+  return crypto.randomUUID();
+}
+
+/**
+ * Sends a message and streams the turn: `onEvent` receives every TurnEvent in order, ending with
+ * exactly one `completed`, `stopped` or `failed`. `conversationId: null` starts a new conversation.
+ */
+export async function sendMessage(
+  turnId: string,
+  conversationId: ConversationId | null,
+  text: string,
+  onEvent: (event: TurnEvent) => void,
+): Promise<void> {
+  const channel = new Channel<TurnEvent>();
+  channel.onmessage = onEvent;
+  await invoke("send_message", { turnId, conversationId, text, onEvent: channel });
+}
+
+/** Regenerates the last reply of a conversation, streamed like `sendMessage`. */
+export async function retryReply(
+  turnId: string,
+  conversationId: ConversationId,
+  onEvent: (event: TurnEvent) => void,
+): Promise<void> {
+  const channel = new Channel<TurnEvent>();
+  channel.onmessage = onEvent;
+  await invoke("retry_reply", { turnId, conversationId, onEvent: channel });
+}
+
+export function stopReply(turnId: string): Promise<boolean> {
+  return invoke<boolean>("stop_reply", { turnId });
+}
+
+/**
+ * Answers an approval with the arguments the dialog showed. The runtime refuses (returns `false`)
+ * a "yes" that expired or doesn't match the pending arguments, and any repeated answer.
+ */
+export function respondApproval(
+  approvalId: string,
+  approved: boolean,
+  shownArguments: JsonValue,
+): Promise<boolean> {
+  return invoke<boolean>("respond_approval", { approvalId, approved, shownArguments });
+}
+
+export function renameConversation(conversationId: ConversationId, title: string): Promise<Conversation> {
+  return invoke<Conversation>("rename_conversation", { conversationId, title });
+}
+
+export async function deleteConversation(conversationId: ConversationId): Promise<void> {
+  await invoke("delete_conversation", { conversationId });
+}
+
+function isTerminal(event: TurnEvent): boolean {
+  return event.type === "completed" || event.type === "stopped" || event.type === "failed";
+}
+
+/**
+ * Runs a streaming command and resolves once **both** the command has returned and the turn's
+ * terminal event has arrived. Tauri orders channel messages among themselves, but not relative
+ * to the command's own response, so waiting for just one of them could drop the last events.
+ * If the command fails without a terminal event (e.g. invalid input), the promise rejects.
+ */
+export function streamTurn(
+  start: (onEvent: (event: TurnEvent) => void) => Promise<void>,
+  onEvent: (event: TurnEvent) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let terminal = false;
+    let returned = false;
+    const finishIfDone = () => {
+      if (terminal && returned) resolve();
+    };
+    start((event) => {
+      onEvent(event);
+      if (isTerminal(event)) {
+        terminal = true;
+        finishIfDone();
+      }
+    }).then(
+      () => {
+        returned = true;
+        finishIfDone();
+      },
+      (error: unknown) => {
+        if (terminal) {
+          returned = true;
+          finishIfDone();
+        } else {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      },
+    );
+  });
+}

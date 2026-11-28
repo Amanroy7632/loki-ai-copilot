@@ -21,6 +21,27 @@ use crate::error::RuntimeError;
 /// The config version this build writes.
 pub const CONFIG_VERSION: u64 = 3;
 
+/// Environment variable that overrides the provider for one run: `mock` or `ollama`. Used by
+/// front ends that have no `--provider` flag (the desktop app, `scripts/dev.sh --mock`).
+pub const PROVIDER_ENV: &str = "LOKI_PROVIDER";
+
+/// Reads [`PROVIDER_ENV`]. Unset or empty means "use the config"; any other value than `mock` or
+/// `ollama` is an error, so a typo never silently picks a provider.
+pub fn provider_from_env() -> Result<Option<ProviderKind>, RuntimeError> {
+    parse_provider(std::env::var(PROVIDER_ENV).ok().as_deref())
+}
+
+fn parse_provider(value: Option<&str>) -> Result<Option<ProviderKind>, RuntimeError> {
+    match value.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some("mock") => Ok(Some(ProviderKind::Mock)),
+        Some("ollama") => Ok(Some(ProviderKind::Ollama)),
+        Some(other) => Err(RuntimeError::InvalidInput(format!(
+            "{PROVIDER_ENV} must be 'mock' or 'ollama', not '{other}'"
+        ))),
+    }
+}
+
 /// Default Ollama endpoint: IPv4 loopback literal, never `localhost` (see `net.rs`).
 pub const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
 
@@ -523,6 +544,25 @@ mod tests {
         assert_eq!(config.provider, ProviderKind::Ollama);
         assert_eq!(config.ollama.base_url, "http://127.0.0.1:11434");
         assert!(config.context.reserve_tokens < config.context.tokens);
+    }
+
+    #[test]
+    fn provider_override_accepts_only_known_values() {
+        assert_eq!(parse_provider(None).unwrap(), None);
+        assert_eq!(parse_provider(Some("  ")).unwrap(), None);
+        assert_eq!(
+            parse_provider(Some("mock")).unwrap(),
+            Some(ProviderKind::Mock)
+        );
+        assert_eq!(
+            parse_provider(Some("ollama")).unwrap(),
+            Some(ProviderKind::Ollama)
+        );
+        assert!(
+            parse_provider(Some("openai")).is_err(),
+            "no silent fallback to anything else"
+        );
+        assert!(parse_provider(Some("Mock")).is_err());
     }
 
     #[test]

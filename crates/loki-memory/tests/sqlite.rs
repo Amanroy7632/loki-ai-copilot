@@ -396,3 +396,27 @@ fn stopped_flag_round_trips() {
     assert!(stored[0].stopped);
     assert!(!stored[1].stopped);
 }
+
+#[test]
+fn rename_changes_only_the_title_and_unknown_ids_return_none() {
+    let mut db = Database::open_in_memory().unwrap();
+    db.create_conversation(&ConversationId::new("c1"), "old", UnixMillis(1))
+        .unwrap();
+    db.append_message(&message("m1", "c1", Role::User, "hi", 5))
+        .unwrap();
+    let renamed = db
+        .rename_conversation(&ConversationId::new("c1"), "Groceries")
+        .unwrap()
+        .unwrap();
+    assert_eq!(renamed.title, "Groceries");
+    assert_eq!(renamed.updated_at, UnixMillis(5), "rename isn't activity");
+    assert_eq!(
+        db.list_messages(&ConversationId::new("c1")).unwrap().len(),
+        1
+    );
+    assert!(
+        db.rename_conversation(&ConversationId::new("nope"), "x")
+            .unwrap()
+            .is_none()
+    );
+}
