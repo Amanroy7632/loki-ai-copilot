@@ -193,7 +193,7 @@ pub async fn run(runtime: &mut Runtime, resume: Option<ConversationId>) -> anyho
         }
         let line = tokio::select! {
             line = lines.next() => line,
-            _ = tokio::signal::ctrl_c() => {
+            _ = crate::signals::ctrl_c() => {
                 println!("\n(Nothing to stop. Type /quit to exit.)");
                 continue;
             }
@@ -290,7 +290,7 @@ async fn reply(
     let outcome = loop {
         tokio::select! {
             outcome = &mut generation => break outcome,
-            _ = tokio::signal::ctrl_c() => cancel.cancel(),
+            _ = crate::signals::ctrl_c() => cancel.cancel(),
             line = lines.receiver.recv(), if stdin_open => match line {
                 // A pending approval takes the next line typed after its prompt.
                 Some(line) if ui.answer(&line) => {}

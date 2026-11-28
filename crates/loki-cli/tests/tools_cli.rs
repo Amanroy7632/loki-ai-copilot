@@ -38,6 +38,17 @@ fn run(data_dir: &Path, args: &[&str]) -> String {
     ok(loki(data_dir).args(args).output().unwrap())
 }
 
+/// `loki` with the mock platform: fake apps, nothing launched, same on every OS.
+fn loki_mock_platform(data_dir: &Path) -> Command {
+    let mut command = loki(data_dir);
+    command.arg("--mock-platform");
+    command
+}
+
+fn run_mock_platform(data_dir: &Path, args: &[&str]) -> String {
+    ok(loki_mock_platform(data_dir).args(args).output().unwrap())
+}
+
 fn write_script(dir: &Path, scripts: serde_json::Value) -> std::path::PathBuf {
     let path = dir.join("script.json");
     std::fs::write(&path, json!({ "scripts": scripts }).to_string()).unwrap();
@@ -45,7 +56,7 @@ fn write_script(dir: &Path, scripts: serde_json::Value) -> std::path::PathBuf {
 }
 
 fn chat(data_dir: &Path, script: &Path, stdin: &str) -> String {
-    let mut child = loki(data_dir)
+    let mut child = loki_mock_platform(data_dir)
         .arg("--mock-script")
         .arg(script)
         .arg("chat")
@@ -235,20 +246,20 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 /// The real approval prompt: answering `n` means the app is not launched and the task is
-/// recorded as cancelled. (The approve path is covered by the manual smoke test, because it
-/// really launches an app.)
+/// recorded as cancelled. Uses the mock platform so it runs on every OS (the approve path on the
+/// real macOS adapter is the manual smoke test, because it really launches an app).
 #[test]
 fn rejected_approval_at_the_prompt_launches_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    run(dir.path(), &["permissions", "grant", "app_launch"]);
+    run_mock_platform(dir.path(), &["permissions", "grant", "app_launch"]);
     let script = write_script(
         dir.path(),
         json!([
-            { "steps": [{ "type": "tool_call", "tool": "app.open", "arguments": { "app_id": "com.apple.calculator" } }, { "type": "done" }] },
+            { "steps": [{ "type": "tool_call", "tool": "app.open", "arguments": { "app_id": "com.example.calculator" } }, { "type": "done" }] },
             { "steps": [{ "type": "token", "text": "Okay, not opening it." }, { "type": "done" }] }
         ]),
     );
-    let mut child = loki(dir.path())
+    let mut child = loki_mock_platform(dir.path())
         .arg("--mock-script")
         .arg(&script)
         .arg("chat")
@@ -287,7 +298,7 @@ fn rejected_approval_at_the_prompt_launches_nothing() {
     let out = reader.join().unwrap();
     assert!(
         out.contains("Tool:      app.open")
-            && out.contains("com.apple.calculator")
+            && out.contains("com.example.calculator")
             && out.contains("LocalChange"),
         "{out}"
     );
@@ -304,11 +315,11 @@ fn rejected_approval_at_the_prompt_launches_nothing() {
 #[test]
 fn approval_with_no_input_left_is_a_no() {
     let dir = tempfile::tempdir().unwrap();
-    run(dir.path(), &["permissions", "grant", "app_launch"]);
+    run_mock_platform(dir.path(), &["permissions", "grant", "app_launch"]);
     let script = write_script(
         dir.path(),
         json!([
-            { "steps": [{ "type": "tool_call", "tool": "app.open", "arguments": { "app_id": "com.apple.calculator" } }, { "type": "done" }] },
+            { "steps": [{ "type": "tool_call", "tool": "app.open", "arguments": { "app_id": "com.example.calculator" } }, { "type": "done" }] },
             { "steps": [{ "type": "token", "text": "ok" }, { "type": "done" }] }
         ]),
     );
@@ -319,4 +330,24 @@ fn approval_with_no_input_left_is_a_no() {
         "{out}"
     );
     assert!(run(dir.path(), &["audit", "list"]).contains("cancelled"));
+}
+
+/// Honest capability reporting: where the native adapter can't launch apps (Windows/Linux until
+/// P6), granting app_launch is refused rather than shown as working.
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn native_app_launch_is_reported_unavailable_until_p6() {
+    let dir = tempfile::tempdir().unwrap();
+    let list = run(dir.path(), &["permissions", "list"]);
+    assert!(
+        list.lines()
+            .any(|l| l.starts_with("app_launch") && l.contains("unavailable")),
+        "{list}"
+    );
+    let output = loki(dir.path())
+        .args(["permissions", "grant", "app_launch"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unavailable"));
 }

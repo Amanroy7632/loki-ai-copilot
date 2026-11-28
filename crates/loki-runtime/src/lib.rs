@@ -42,5 +42,7 @@ pub use loki_llm::CancellationToken;
 pub use loki_llm::{MockScript, ProviderHealth, PullProgress};
 pub use loki_memory::{TaskRow, ToolRunFilter, ToolRunRow};
 pub use loki_policy::PendingApproval;
+/// Test double for `--mock-platform` and tests (fake apps; never launches anything).
+pub use loki_tools::platform::MockPlatform;
 pub use paths::{DATA_DIR_ENV, Paths};
 pub use redact::{Redactor, redact};
