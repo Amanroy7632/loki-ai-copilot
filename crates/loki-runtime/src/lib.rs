@@ -32,6 +32,7 @@ pub mod models;
 pub mod net;
 pub mod paths;
 pub mod redact;
+pub mod stream;
 pub mod tooling;
 
 pub use app::{PermissionRow, ReplyOutcome, Runtime, RuntimeOptions};
@@ -46,3 +47,4 @@ pub use loki_policy::PendingApproval;
 pub use loki_tools::platform::MockPlatform;
 pub use paths::{DATA_DIR_ENV, Paths};
 pub use redact::{Redactor, redact};
+pub use stream::EventSink;

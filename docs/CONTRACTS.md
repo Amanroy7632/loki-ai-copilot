@@ -19,6 +19,10 @@ Grant         { capability, scope }                     deny_unknown_fields; sco
 NetworkMode   = LocalOnly | ToolsAllowed               (moved here from loki-runtime, ADR-0011)
 TaskId, ApprovalId                                     string newtypes (P3)
 AppStatus     { version, provider, model?, ready, detail?, tools_enabled }   deny_unknown_fields (P5 runtime API)
+ApprovalPreview { id, request_id, tool, risk, arguments, expires_at }          deny_unknown_fields (P5)
+TurnEvent     = started { conversation } | token { text } | approval_requested { approval }
+              | tool_finished { tool, status, detail? } | completed { message } | stopped { message? }
+              | failed { error }          tag "type"; each turn ends with exactly one completed/stopped/failed
 Risk          = ReadOnly < Network < LocalChange < Sensitive
 ToolStatus    = Succeeded | Failed | Cancelled | TimedOut | Denied
 ErrorCode     = InvalidArguments | UnknownTool | PolicyDenied | ApprovalInvalid | PermissionRequired
@@ -90,6 +94,13 @@ Policy (loki-policy, implemented in P3-T02/T03)
              Network in local_only -> LocalChange/Sensitive need approval -> Allow
   authorize(input, approval_id, now, ttl) -> Allowed | NeedsApproval(PendingApproval) | Denied { reason }
   allow_approved(ConsumedApproval, request) -> Result<Allowed, ApprovalError>   (store consumed it first)
+
+Streaming runtime API (loki-runtime, P5-T02; used by the Tauri commands)
+  chat_turn(turn_id, conversation?, text?, sink) streams TurnEvents (text None = retry)
+  stop_turn(turn_id) -> bool; respond_approval(approval_id, approved) -> bool (single use; waits
+  at most until the approval expires). Desktop commands: send_message, retry_reply, stop_reply,
+  respond_approval, list_conversations, get_messages, app_status (each declared in build.rs and
+  granted in capabilities/default.json).
 
 Agent tool loop (loki-agent, P3-T05)
   validate -> policy -> approval (ToolUi, default no) -> execute -> audit; results go back wrapped as

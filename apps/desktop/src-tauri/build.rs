@@ -2,8 +2,16 @@
 //! callable only when a capability file grants it (least privilege, P5-T09).
 
 fn main() {
-    let attributes = tauri_build::Attributes::new()
-        .app_manifest(tauri_build::AppManifest::new().commands(&["app_status"]));
+    let attributes =
+        tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(&[
+            "app_status",
+            "send_message",
+            "retry_reply",
+            "stop_reply",
+            "respond_approval",
+            "list_conversations",
+            "get_messages",
+        ]));
     if let Err(error) = tauri_build::try_build(attributes) {
         panic!("tauri build configuration failed: {error:#}");
     }

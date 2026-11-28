@@ -1,7 +1,8 @@
 import type { AppStatus } from "@loki/contracts";
 import { StatusPill } from "@loki/ui";
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+
+import { appStatus } from "./api";
 
 type Load = { kind: "loading" } | { kind: "ready"; status: AppStatus } | { kind: "error"; message: string };
 
@@ -11,7 +12,7 @@ export function App() {
 
   useEffect(() => {
     let active = true;
-    invoke<AppStatus>("app_status").then(
+    appStatus().then(
       (status) => {
         if (active) setLoad({ kind: "ready", status });
       },

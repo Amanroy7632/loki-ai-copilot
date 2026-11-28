@@ -9,7 +9,7 @@
 | | |
 | --- | --- |
 | **Current phase** | P4: Voice ([phase file](phases/P04-voice.md)). Owner authorized parallel P4 development and then integration of P4-T01 into the main checkout after P3 implementation (2026-11-27). Earlier phase gates remain open. |
-| **Next ticket** | **P5-T02 Runtime API and event streaming** (owner: fix P4-T03, then P5; P4-T04..T09 still open in parallel). P3 is code complete (238 tests and native smoke test recorded) but still needs SEC tests passing in CI. Open owner items: the P2 offline test, D-05, D-07. |
+| **Next ticket** | **P5-T03 Chat UI** (owner: fix P4-T03, then P5; P4-T04..T09 still open in parallel). P3 is code complete (238 tests and native smoke test recorded) but still needs SEC tests passing in CI. Open owner items: the P2 offline test, D-05, D-07. |
 | **Last gate passed** | none |
 | **Reference OS** | **macOS** (Apple Silicon first), ADR-0003 |
 
@@ -95,7 +95,8 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 ## P5 tickets
 
 - [x] P5-T01 Scaffold: `apps/desktop` (Tauri 2.12.5, React 19.3.1, TS strict, Vite 8.3.8) and `packages/ui`; ESLint 10 + Prettier + Vitest 5; JS job in CI; Linux WebKitGTK build deps in CI. `pnpm --filter desktop tauri dev` runs (app stays up, Vite serves, runtime opened). Least-privilege ACL from the start: one app command (`app_status`), one capability, no core plugins; strict CSP. *CI not yet run.*
-- [ ] P5-T02..T10: not started.
+- [x] P5-T02 Runtime API and event streaming: `TurnEvent` contract over one Tauri Channel per turn; runtime `chat_turn` / `stop_turn` / `respond_approval` (approval broker: single-use answers, waits at most until expiry); 7 thin commands, each in the app manifest and the capability. Acceptance: Vitest test receives the mock provider's streamed reply through a real `Channel`; Rust tests drive `chat_turn` with MockProvider (event order, approve/reject, stop).
+- [ ] P5-T03..T10: not started.
 
 ## Open decisions
 
@@ -121,6 +122,7 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 
 Newest first. Format: `YYYY-MM-DD | ticket | what changed | commands run → result`.
 
+- 2026-11-28 | P5-T02 | Streaming runtime API and desktop commands (see CONTRACTS.md). Verified in Tauri 2.12 source: with an app ACL manifest every custom command is ACL-checked, and the channel data-fetch command is exempt, so streaming needs no extra permission. | `./scripts/check.sh` → all passed (280 Rust + 11 JS tests). `tauri dev` starts with all 7 permissions generated.
 - 2026-11-28 | P5-T01 | Desktop scaffold (Tauri 2 stable; 3.x is alpha), `packages/ui` (StatusPill), root ESLint/Prettier, `AppStatus` contract type, `Runtime::open_for_app` (labelled mock fallback before onboarding) and `Runtime::status`. Fixed: `open` now rejects a missing model before installing the global logger (the first `tauri dev` run panicked on a second logger init). New D-07 crates (Tauri's MPL-2.0 Servo deps) and D-08 (app identifier placeholder). All versions at least two weeks old. | `./scripts/check.sh` → all passed (273 Rust + 7 JS tests, eslint, prettier, tsc, cargo deny). `tauri dev` with a throwaway data dir: app ran 18 s, Vite HTTP 200, log `runtime opened provider="mock"`, no errors.
 - 2026-11-28 | P4-T03 | Finished the in-progress VAD. Found: (1) its `.wav` fixtures were git-ignored (`*.wav`), so CI could not compile the tests; (2) they came from a Python script; (3) the noise test failed even with those fixtures, because earshot scores noise onsets above 0.5 for up to 352 ms, longer than the 80 ms confirmation. Ported the generator to Rust (0 differing samples vs the WAVs), removed the WAVs and script, raised the default confirmation to 400 ms, added continuous-noise-bed tests, wrote the missing ADR-0013. Reviewed P4-T02 (`c040e5e`): correct; standalone fmt/clippy/259 tests/cargo deny pass. | `cargo test -p loki-voice` → 33 passed (VAD 12); measurements in ADR-0013.
 - 2026-11-27 | P4-T02 | Explicit capture, synthetic-source trait/tests, bounded queue and 16 kHz mono FFT conversion; ADR-0012, exact-pinned reviewed dependencies, Linux ALSA CI prerequisite. Native probe: 143872 frames at 48 kHz → 47958 at 16 kHz, no drops, no audio saved. First native attempt returned Backend; retry succeeded. | Voice tests: 21 passed; clippy passed. Initial full run hit stale Claude scratch-path test artifacts; fresh `CARGO_TARGET_DIR=/private/tmp/loki-p4-verified-target ./scripts/check.sh` → all passed, 259 tests, contracts/tsc/cargo deny passed. See `docs/handoffs/p4-t02.md`.

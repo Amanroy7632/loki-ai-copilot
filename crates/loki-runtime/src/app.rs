@@ -142,6 +142,8 @@ pub struct Runtime {
     orchestrator: Orchestrator,
     platform: Arc<dyn Platform>,
     tools: Option<Arc<ToolHost>>,
+    turns: crate::stream::TurnRegistry,
+    approvals: Arc<crate::stream::ApprovalBroker>,
     _logging: Option<LoggingGuard>,
 }
 
@@ -241,6 +243,8 @@ impl Runtime {
             orchestrator,
             platform,
             tools,
+            turns: crate::stream::TurnRegistry::default(),
+            approvals: Arc::default(),
             _logging: logging,
         })
     }
@@ -410,6 +414,85 @@ impl Runtime {
             .orchestrator
             .retry(conversation, cancel, ui, on_token)
             .await?)
+    }
+
+    // --------------------------------------------------------------------- streaming (P5-T02)
+
+    /// Runs one chat turn for a streaming front end, sending every event to `sink`.
+    ///
+    /// - `conversation: None` with `text` starts a new conversation (`Started` comes first).
+    /// - `text: None` retries the last reply of `conversation`.
+    ///
+    /// The turn always ends with exactly one `Completed`, `Stopped` or `Failed` event; errors are
+    /// reported that way and also returned. `turn_id` is chosen by the caller so `stop_turn` can
+    /// cancel it; an ID already running is refused.
+    pub async fn chat_turn(
+        &self,
+        turn_id: &str,
+        conversation: Option<ConversationId>,
+        text: Option<String>,
+        sink: crate::stream::EventSink,
+    ) -> Result<(), RuntimeError> {
+        let cancel = self.turns.begin(turn_id).ok_or_else(|| {
+            RuntimeError::InvalidInput(String::from("invalid or duplicate turn id"))
+        })?;
+        let result = self.run_turn(conversation, text, cancel, &sink).await;
+        self.turns.end(turn_id);
+        match result {
+            Ok(TurnResult::Completed(message)) => sink(loki_core::TurnEvent::Completed { message }),
+            Ok(TurnResult::Stopped(message)) => sink(loki_core::TurnEvent::Stopped { message }),
+            Err(error) => {
+                sink(loki_core::TurnEvent::Failed {
+                    error: error.to_string(),
+                });
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    async fn run_turn(
+        &self,
+        conversation: Option<ConversationId>,
+        text: Option<String>,
+        cancel: CancellationToken,
+        sink: &crate::stream::EventSink,
+    ) -> Result<TurnResult, RuntimeError> {
+        let ui = crate::stream::StreamUi {
+            sink: Arc::clone(sink),
+            broker: Arc::clone(&self.approvals),
+        };
+        let on_token = |token: &str| {
+            sink(loki_core::TurnEvent::Token {
+                text: token.to_owned(),
+            });
+        };
+        match (conversation, text) {
+            (None, Some(text)) => {
+                let created = self.start_conversation(&text).await?;
+                sink(loki_core::TurnEvent::Started {
+                    conversation: created.clone(),
+                });
+                self.send(&created.id, &text, cancel, &ui, on_token).await
+            }
+            (Some(id), Some(text)) => self.send(&id, &text, cancel, &ui, on_token).await,
+            (Some(id), None) => self.retry_reply(&id, cancel, &ui, on_token).await,
+            (None, None) => Err(RuntimeError::InvalidInput(String::from(
+                "a new conversation needs a message",
+            ))),
+        }
+    }
+
+    /// Stops a running turn (the UI's Stop button). Returns `false` if it isn't running.
+    pub fn stop_turn(&self, turn_id: &str) -> bool {
+        self.turns.stop(turn_id)
+    }
+
+    /// Delivers the user's answer to a pending approval. Returns `false` for unknown, expired or
+    /// already answered IDs. A "yes" still has to pass the store's single-use, unexpired,
+    /// same-arguments check before anything runs.
+    pub fn respond_approval(&self, approval_id: &str, approved: bool) -> bool {
+        self.approvals.respond(approval_id, approved)
     }
 
     // --------------------------------------------------------------------- tools (P3)
