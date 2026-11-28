@@ -9,7 +9,7 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/*", "tests/security"]
+members = ["crates/*", "tests/security", "apps/desktop/src-tauri"]
 exclude = ["spikes"]          # P0 spikes are standalone crates, never workspace members
 
 [workspace.package]
@@ -71,6 +71,10 @@ rubato = "=5.1.0"
 crossbeam-queue = "=0.3.14"
 # P4-T03: local VAD, MIT OR Apache-2.0; verified 2026-11-27 (ADR-0013).
 earshot = "=1.2.2"
+# P5: Tauri 2 stable (3.x is alpha). Exact pins: each release is at least two weeks old (2026-11-28);
+# MIT OR Apache-2.0. The JS packages are pinned to the same 2.12 line in apps/desktop/package.json.
+tauri = { version = "=2.12.5", features = [] }
+tauri-build = { version = "=2.7.4", features = [] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"          # FFI modules opt out locally, with a `// SAFETY:` comment per block

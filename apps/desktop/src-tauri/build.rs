@@ -1,0 +1,10 @@
+//! Declares Loki's own commands in the Tauri app manifest. With a manifest, a command is
+//! callable only when a capability file grants it (least privilege, P5-T09).
+
+fn main() {
+    let attributes = tauri_build::Attributes::new()
+        .app_manifest(tauri_build::AppManifest::new().commands(&["app_status"]));
+    if let Err(error) = tauri_build::try_build(attributes) {
+        panic!("tauri build configuration failed: {error:#}");
+    }
+}

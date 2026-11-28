@@ -175,6 +175,14 @@ impl Runtime {
         paths.ensure()?;
         let loaded = config::load_or_init(&paths.config_file())?;
         let config = loaded.config;
+        // Fail on a missing model *before* installing the global logger, so a caller can retry
+        // (`open_for_app` falls back to the mock) without initialising logging twice.
+        if options.provider.unwrap_or(config.provider) == ProviderKind::Ollama
+            && options.model.is_none()
+            && config.model_id.is_none()
+        {
+            return Err(RuntimeError::NoModelSelected);
+        }
 
         let logging = if options.init_logging {
             let roots = config.allowed_roots.iter().map(|root| root.path.clone());
@@ -277,6 +285,45 @@ impl Runtime {
     /// Asks the provider whether it can serve requests (Ollama: server up and model installed).
     pub async fn provider_health(&self) -> ProviderHealth {
         self.orchestrator.provider().health().await
+    }
+
+    /// Opens like [`Runtime::open`], but if Ollama is configured without a model (first run,
+    /// before onboarding), opens with the **mock** provider instead and returns a note saying
+    /// so. Front ends must show the note; the mock is always labelled `mock`, never a model.
+    pub fn open_for_app(options: RuntimeOptions) -> Result<(Self, Option<String>), RuntimeError> {
+        match Self::open(options.clone()) {
+            Ok(runtime) => Ok((runtime, None)),
+            Err(RuntimeError::NoModelSelected) => {
+                let runtime = Self::open(RuntimeOptions {
+                    provider: Some(ProviderKind::Mock),
+                    ..options
+                })?;
+                Ok((
+                    runtime,
+                    Some(String::from(
+                        "No model selected yet: replies come from the built-in mock. Choose a model in Settings.",
+                    )),
+                ))
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// The status a front end shows: provider, model, readiness and an optional note.
+    pub async fn status(&self, note: Option<&str>) -> loki_core::AppStatus {
+        let health = self.provider_health().await;
+        let (ready, reason) = match health {
+            ProviderHealth::Ready => (true, None),
+            ProviderHealth::Unavailable { reason } => (false, Some(reason)),
+        };
+        loki_core::AppStatus {
+            version: String::from(env!("CARGO_PKG_VERSION")),
+            provider: self.provider_name().to_owned(),
+            model: self.model().map(str::to_owned),
+            ready,
+            detail: reason.or_else(|| note.map(str::to_owned)),
+            tools_enabled: self.tools_enabled(),
+        }
     }
 
     /// Switches the model for this session (`/model <id>`). Not saved; use [`Runtime::use_model`].
@@ -734,6 +781,22 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, RuntimeError::ConversationNotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn app_open_without_a_model_falls_back_to_a_labelled_mock() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, note) = Runtime::open_for_app(RuntimeOptions {
+            data_dir: Some(dir.path().to_path_buf()),
+            ..RuntimeOptions::default()
+        })
+        .unwrap();
+        assert_eq!(runtime.provider_name(), "mock");
+        let note = note.expect("the fallback must be explained");
+        let status = runtime.status(Some(&note)).await;
+        assert_eq!(status.provider, "mock");
+        assert!(status.ready);
+        assert!(status.detail.unwrap().contains("No model selected"));
     }
 
     #[test]

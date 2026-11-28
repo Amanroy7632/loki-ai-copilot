@@ -1,0 +1,20 @@
+[package]
+name = "loki-desktop"
+description = "Loki desktop shell (Tauri 2). Commands are thin: deserialize, call loki-runtime, serialize."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# ARCHITECTURE.md: apps/desktop -> runtime, core. No other internal crates.
+[dependencies]
+loki-core.workspace = true
+loki-runtime.workspace = true
+serde.workspace = true
+tauri.workspace = true
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[lints]
+workspace = true

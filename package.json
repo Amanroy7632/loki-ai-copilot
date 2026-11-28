@@ -1,12 +1,25 @@
 {
   "name": "loki-workspace",
   "private": true,
-  "description": "JS workspace root for Loki. Generated contracts live in packages/contracts (P1-T03); the desktop app and shared UI are added in P5.",
+  "description": "JS workspace root for Loki: generated contracts, shared UI and the desktop app.",
   "packageManager": "pnpm@10.15.1",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "typecheck": "pnpm -r --if-present typecheck"
+    "lint": "eslint . --max-warnings 0",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.15.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.14.0",
+    "prettier": "3.10.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2"
   }
 }

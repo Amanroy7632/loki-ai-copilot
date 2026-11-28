@@ -18,6 +18,7 @@ UnixMillis    i64 ms since the epoch, UTC (TS: number)
 Grant         { capability, scope }                     deny_unknown_fields; scope "*" or an allowed-root ID
 NetworkMode   = LocalOnly | ToolsAllowed               (moved here from loki-runtime, ADR-0011)
 TaskId, ApprovalId                                     string newtypes (P3)
+AppStatus     { version, provider, model?, ready, detail?, tools_enabled }   deny_unknown_fields (P5 runtime API)
 Risk          = ReadOnly < Network < LocalChange < Sensitive
 ToolStatus    = Succeeded | Failed | Cancelled | TimedOut | Denied
 ErrorCode     = InvalidArguments | UnknownTool | PolicyDenied | ApprovalInvalid | PermissionRequired

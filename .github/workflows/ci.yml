@@ -1,5 +1,5 @@
 # CI: the same checks as scripts/check.*, on native runners for each desktop OS (P1-T09).
-# P5 adds the desktop JS jobs. P11-T05 pins actions by commit SHA.
+# P5 added the JS job (lint, format, typecheck, tests). P11-T05 pins actions by commit SHA.
 name: ci
 
 on:
@@ -29,9 +29,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install Linux audio build dependencies
+      - name: Install Linux build dependencies (audio: ALSA; desktop: Tauri 2 / WebKitGTK)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+        run: >-
+          sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev
+          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
       - name: Install toolchain from rust-toolchain.toml
         run: rustup toolchain install || rustup show
       - uses: Swatinem/rust-cache@v2
@@ -44,9 +46,9 @@ jobs:
       - name: test
         run: cargo test --workspace --locked
 
-  contracts:
-    # Generation is deterministic, so one OS is enough.
-    name: contracts (generated TS is current and compiles)
+  js:
+    # Generation and the JS toolchain are platform independent, so one OS is enough.
+    name: js (contracts current; lint, format, typecheck, tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,8 +63,14 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: tsc --strict
-        run: pnpm --filter @loki/contracts typecheck
+      - name: tsc --strict (all packages)
+        run: pnpm typecheck
+      - name: eslint
+        run: pnpm lint
+      - name: prettier
+        run: pnpm format:check
+      - name: vitest
+        run: pnpm test
 
   deny:
     name: cargo deny (licenses, advisories, bans, sources)
