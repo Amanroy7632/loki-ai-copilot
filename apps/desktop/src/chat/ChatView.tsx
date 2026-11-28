@@ -1,5 +1,5 @@
-import type { ApprovalPreview, Conversation, ConversationId, Message, TurnEvent } from "@loki/contracts";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { Conversation, ConversationId, Message, TurnEvent } from "@loki/contracts";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   deleteConversation,
@@ -7,26 +7,24 @@ import {
   listConversations,
   newTurnId,
   renameConversation,
+  respondApproval,
   retryReply,
   sendMessage,
   stopReply,
   streamTurn,
 } from "../api";
+import { ApprovalDialog } from "../approval/ApprovalDialog";
 import { applyTurnEvent, initialTurn, type TurnState } from "../turn";
 import { Composer } from "./Composer";
 import { ConversationList } from "./ConversationList";
 import { MessageList } from "./MessageList";
 
-export interface ChatViewProps {
-  /** Renders the approval UI for a pending approval (P5-T04). */
-  renderApproval?: (approval: ApprovalPreview) => ReactNode;
-}
-
 /**
- * The chat screen (P5-T03). All behaviour lives in loki-runtime; this holds only view state and
- * reloads what the runtime stored after every turn, so the screen always matches the database.
+ * The chat screen (P5-T03) and the approval dialog (P5-T04). All behaviour lives in loki-runtime;
+ * this holds only view state and reloads what the runtime stored after every turn, so the screen
+ * always matches the database.
  */
-export function ChatView({ renderApproval }: ChatViewProps) {
+export function ChatView() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<ConversationId | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -134,6 +132,7 @@ export function ChatView({ renderApproval }: ChatViewProps) {
     setConversations((list) => list.filter((c) => c.id !== id));
   };
 
+  const approval = turn?.pendingApproval ?? null;
   const last = messages.at(-1);
   const canRetry = selected !== null && last !== undefined && !streaming;
   const notice =
@@ -161,7 +160,13 @@ export function ChatView({ renderApproval }: ChatViewProps) {
           streamingText={streaming ? (turn?.text ?? "") : null}
           tools={turn?.tools ?? []}
         />
-        {turn?.pendingApproval && renderApproval?.(turn.pendingApproval)}
+        {approval && (
+          <ApprovalDialog
+            key={approval.id}
+            approval={approval}
+            onAnswer={(approved, shown) => respondApproval(approval.id, approved, shown)}
+          />
+        )}
         {notice && (
           <p className="notice" role="status">
             {notice}

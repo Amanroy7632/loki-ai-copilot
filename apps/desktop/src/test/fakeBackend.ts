@@ -1,7 +1,9 @@
 // An in-memory stand-in for loki-runtime behind mocked Tauri IPC, for component tests. It streams
 // turns through real Channel objects exactly as Tauri frames them ({ index, message }), and mimics
-// the mock provider ("Mock reply: <text>", one word per token).
-import type { AppStatus, Conversation, Message, TurnEvent } from "@loki/contracts";
+// the mock provider ("Mock reply: <text>", one word per token). With `approval`, the next turn asks
+// for one first and answers like the runtime broker: a "yes" counts only if it is unexpired and
+// carries the arguments that were shown.
+import type { AppStatus, Conversation, JsonValue, Message, Risk, TurnEvent } from "@loki/contracts";
 import type { Channel } from "@tauri-apps/api/core";
 import { mockIPC } from "@tauri-apps/api/mocks";
 
@@ -20,6 +22,8 @@ export interface FakeBackendOptions {
   failWith?: string;
   conversations?: Conversation[];
   messages?: Record<string, Message[]>;
+  /** The next turn requests this approval before replying. */
+  approval?: { tool: string; risk: Risk; arguments: JsonValue; ttlMs?: number };
 }
 
 export interface FakeBackend {
@@ -29,6 +33,8 @@ export interface FakeBackend {
   /** Lets a held stream continue. */
   release(): void;
   failWith: string | null;
+  /** Each approval answer and whether the fake runtime accepted it. */
+  answers: { approvalId: string; approved: boolean; shownArguments: JsonValue; accepted: boolean }[];
 }
 
 export const STATUS: AppStatus = {
@@ -54,6 +60,53 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
     messages: new Map(Object.entries(options.messages ?? {})),
     release: () => releaseGate?.(),
     failWith: options.failWith ?? null,
+    answers: [],
+  };
+  let approvalConfig = options.approval ?? null;
+  const waiting = new Map<
+    string,
+    { resolve: (approved: boolean) => void; arguments: JsonValue; expiresAt: number }
+  >();
+
+  const requestApproval = (emit: (message: TurnEvent) => void) => {
+    const config = approvalConfig;
+    if (!config) return Promise.resolve(null);
+    approvalConfig = null;
+    const id = next("ap");
+    const expiresAt = Date.now() + (config.ttlMs ?? 120_000);
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        waiting.delete(id);
+        resolve(false);
+      }, expiresAt - Date.now());
+      waiting.set(id, {
+        resolve: (approved) => {
+          clearTimeout(timer);
+          resolve(approved);
+        },
+        arguments: config.arguments,
+        expiresAt,
+      });
+      emit({
+        type: "approval_requested",
+        approval: {
+          id,
+          request_id: next("rq"),
+          tool: config.tool,
+          risk: config.risk,
+          arguments: config.arguments,
+          expires_at: expiresAt,
+        },
+      });
+    }).then((approved) => {
+      emit({
+        type: "tool_finished",
+        tool: config.tool,
+        status: approved ? "succeeded" : "cancelled",
+        detail: approved ? null : "the user did not approve this action",
+      });
+      return approved;
+    });
   };
 
   const append = (conversationId: string, message: Message) => {
@@ -76,6 +129,7 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
       emit({ type: "failed", error });
       throw new Error(error);
     }
+    await requestApproval(emit);
     const words = `Mock reply: ${prompt}`.split(" ");
     let text = "";
     for (const [i, word] of words.entries()) {
@@ -151,6 +205,21 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
         stopped.add(args.turnId as string);
         releaseGate?.();
         return true;
+      case "respond_approval": {
+        const approvalId = args.approvalId as string;
+        const approved = args.approved as boolean;
+        const shownArguments = args.shownArguments as JsonValue;
+        const entry = waiting.get(approvalId);
+        waiting.delete(approvalId);
+        const accepted =
+          entry !== undefined &&
+          (!approved ||
+            (Date.now() < entry.expiresAt &&
+              JSON.stringify(shownArguments) === JSON.stringify(entry.arguments)));
+        entry?.resolve(approved && accepted);
+        backend.answers.push({ approvalId, approved, shownArguments, accepted });
+        return accepted;
+      }
       case "rename_conversation": {
         const id = args.conversationId as string;
         backend.conversations = backend.conversations.map((c) =>

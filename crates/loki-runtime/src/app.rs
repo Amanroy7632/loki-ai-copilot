@@ -523,11 +523,18 @@ impl Runtime {
         self.turns.stop(turn_id)
     }
 
-    /// Delivers the user's answer to a pending approval. Returns `false` for unknown, expired or
-    /// already answered IDs. A "yes" still has to pass the store's single-use, unexpired,
-    /// same-arguments check before anything runs.
-    pub fn respond_approval(&self, approval_id: &str, approved: bool) -> bool {
-        self.approvals.respond(approval_id, approved)
+    /// Delivers the user's answer to a pending approval, with the arguments the dialog showed.
+    /// Returns `false` for unknown or already answered IDs, and for a "yes" that has expired or
+    /// doesn't match the shown arguments (delivered as a refusal). A "yes" still has to pass the
+    /// store's single-use, unexpired, same-arguments check before anything runs.
+    pub fn respond_approval(
+        &self,
+        approval_id: &str,
+        approved: bool,
+        shown_arguments: &serde_json::Value,
+    ) -> bool {
+        self.approvals
+            .respond(approval_id, approved, shown_arguments)
     }
 
     // --------------------------------------------------------------------- tools (P3)

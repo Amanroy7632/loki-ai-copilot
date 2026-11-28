@@ -130,10 +130,11 @@ async fn mock_approval_is_answered_through_respond_approval() {
                 *shown_store.lock().unwrap() = Some(approval.clone());
                 let rt = Arc::clone(&answering);
                 let id = approval.id.to_string();
+                let shown = approval.arguments.clone();
                 tokio::spawn(async move {
-                    assert!(rt.respond_approval(&id, approve));
+                    assert!(rt.respond_approval(&id, approve, &shown));
                     assert!(
-                        !rt.respond_approval(&id, approve),
+                        !rt.respond_approval(&id, approve, &shown),
                         "an answer is single use"
                     );
                 });
@@ -216,7 +217,7 @@ async fn invalid_turn_requests_are_refused() {
         events.lock().unwrap().last(),
         Some(TurnEvent::Failed { .. })
     ));
-    assert!(!rt.respond_approval("not-an-approval", true));
+    assert!(!rt.respond_approval("not-an-approval", true, &json!({})));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -255,4 +256,70 @@ async fn conversations_can_be_renamed_and_deleted() {
         "messages are gone with it"
     );
     assert!(rt.delete_conversation(&conversation.id).await.is_err());
+}
+
+/// P5-T04: a "yes" for arguments other than the pending ones (a stale or wrong dialog) is
+/// refused, delivered as a refusal, and nothing runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn mock_approval_for_different_shown_arguments_runs_nothing() {
+    let scripts = vec![
+        MockScript::new(vec![
+            MockStep::ToolCall {
+                tool: "app.open".into(),
+                arguments: json!({ "app_id": "com.example.calculator" }),
+            },
+            MockStep::Done {
+                prompt_tokens: None,
+                completion_tokens: None,
+            },
+        ])
+        .unwrap(),
+        MockScript::new(vec![
+            MockStep::Token {
+                text: "Not opened.".into(),
+            },
+            MockStep::Done {
+                prompt_tokens: None,
+                completion_tokens: None,
+            },
+        ])
+        .unwrap(),
+    ];
+    let dir = tempfile::tempdir().unwrap();
+    let platform = Arc::new(MockPlatform::default());
+    let rt = Arc::new(runtime(&dir, Some(scripts), Arc::clone(&platform)));
+    rt.grant("app_launch", "*").await.unwrap();
+
+    let answering = Arc::clone(&rt);
+    let answers = Arc::new(Mutex::new(Vec::new()));
+    let answer_store = Arc::clone(&answers);
+    let (collect, events) = sink();
+    let sink: EventSink = Arc::new(move |event: TurnEvent| {
+        if let TurnEvent::ApprovalRequested { approval } = &event {
+            let rt = Arc::clone(&answering);
+            let id = approval.id.to_string();
+            let answer_store = Arc::clone(&answer_store);
+            tokio::spawn(async move {
+                let wrong = json!({ "app_id": "com.example.other" });
+                answer_store
+                    .lock()
+                    .unwrap()
+                    .push(rt.respond_approval(&id, true, &wrong));
+            });
+        }
+        collect(event);
+    });
+    rt.chat_turn("t-wrong", None, Some(String::from("open it")), sink)
+        .await
+        .unwrap();
+
+    assert_eq!(*answers.lock().unwrap(), [false], "the answer is refused");
+    assert!(platform.launches().is_empty(), "nothing was launched");
+    let events = events.lock().unwrap().clone();
+    let finished = events.iter().find_map(|e| match e {
+        TurnEvent::ToolFinished { status, .. } => Some(*status),
+        _ => None,
+    });
+    assert_eq!(finished, Some(ToolStatus::Cancelled));
+    assert!(matches!(events.last(), Some(TurnEvent::Completed { .. })));
 }

@@ -1,5 +1,5 @@
 // Typed wrappers around Loki's Tauri commands. Types come only from @loki/contracts (generated).
-import type { AppStatus, Conversation, ConversationId, Message, TurnEvent } from "@loki/contracts";
+import type { AppStatus, Conversation, ConversationId, JsonValue, Message, TurnEvent } from "@loki/contracts";
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 export function appStatus(): Promise<AppStatus> {
@@ -49,8 +49,16 @@ export function stopReply(turnId: string): Promise<boolean> {
   return invoke<boolean>("stop_reply", { turnId });
 }
 
-export function respondApproval(approvalId: string, approved: boolean): Promise<boolean> {
-  return invoke<boolean>("respond_approval", { approvalId, approved });
+/**
+ * Answers an approval with the arguments the dialog showed. The runtime refuses (returns `false`)
+ * a "yes" that expired or doesn't match the pending arguments, and any repeated answer.
+ */
+export function respondApproval(
+  approvalId: string,
+  approved: boolean,
+  shownArguments: JsonValue,
+): Promise<boolean> {
+  return invoke<boolean>("respond_approval", { approvalId, approved, shownArguments });
 }
 
 export function renameConversation(conversationId: ConversationId, title: string): Promise<Conversation> {

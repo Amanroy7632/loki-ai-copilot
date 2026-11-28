@@ -96,10 +96,10 @@ describe("sendMessage", () => {
       return true;
     });
     expect(await stopReply("turn-3")).toBe(true);
-    expect(await respondApproval("ap-1", false)).toBe(true);
+    expect(await respondApproval("ap-1", false, { app_id: "x" })).toBe(true);
     expect(calls).toEqual([
       ["stop_reply", { turnId: "turn-3" }],
-      ["respond_approval", { approvalId: "ap-1", approved: false }],
+      ["respond_approval", { approvalId: "ap-1", approved: false, shownArguments: { app_id: "x" } }],
     ]);
   });
 });

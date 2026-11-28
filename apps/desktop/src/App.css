@@ -191,3 +191,75 @@ body {
 .danger {
   color: #d33;
 }
+
+/* ---------------------------------------------------------------- approval dialog (P5-T04) */
+
+.approval {
+  border: 2px solid #4c8dff;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 0.5rem 0;
+  background: Canvas;
+  color: CanvasText;
+}
+
+.approval-sensitive {
+  border-color: #d33;
+}
+
+.approval h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.approval h3 {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.95rem;
+}
+
+.approval-arguments {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.approval-arguments > div {
+  display: grid;
+  grid-template-columns: minmax(6rem, max-content) 1fr;
+  gap: 0.75rem;
+}
+
+.approval-arguments dt {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+}
+
+.approval-arguments dd {
+  margin: 0;
+}
+
+.approval pre {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.approval-expiry {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.approval-outcome:empty {
+  display: none;
+}
+
+.approval-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.approval-sensitive .approve {
+  color: #d33;
+  font-weight: 600;
+}

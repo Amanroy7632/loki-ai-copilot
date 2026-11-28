@@ -85,18 +85,20 @@ pub async fn stop_reply(
     Ok(state.runtime.read().await.stop_turn(&turn_id))
 }
 
-/// The user's answer to an approval dialog. `false` for unknown, expired or answered IDs.
+/// The user's answer to an approval dialog, with the arguments the dialog showed. `false` for
+/// unknown or answered IDs, and for a "yes" that expired or doesn't match what was shown.
 #[tauri::command]
 pub async fn respond_approval(
     state: tauri::State<'_, AppState>,
     approval_id: String,
     approved: bool,
+    shown_arguments: serde_json::Value,
 ) -> Result<bool, String> {
     Ok(state
         .runtime
         .read()
         .await
-        .respond_approval(&approval_id, approved))
+        .respond_approval(&approval_id, approved, &shown_arguments))
 }
 
 /// Conversations, most recent first.

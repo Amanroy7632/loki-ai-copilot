@@ -17,3 +17,21 @@ with `loki models use bonsai-2:4b` and Ollama running, replies come from the rea
 
 Not yet run interactively. On 2026-11-28 the agent only verified that the app starts (process stays up,
 no errors) with all 9 commands registered; it cannot operate the window.
+
+# P5-T04 approval dialog: manual run
+
+Setup (real model): `LOKI_DATA_DIR=.dev-data cargo run -q -p loki-cli -- permissions grant app_launch`,
+then `./scripts/dev.sh --model bonsai-2:4b`. Ask "Open the Calculator app."
+
+- [ ] The dialog shows `app.open`, "Changes something", the `app_id` argument and a countdown from 2:00.
+- [ ] Focus is on Deny; pressing Enter denies, the chat shows `app.open: cancelled`, Calculator doesn't open.
+- [ ] Ask again; Tab to Approve and press Enter (or click): Calculator opens, `app.open: succeeded`.
+- [ ] Ask again and leave it: at 0:00 it says "Expired"/closes, and nothing opens.
+- [ ] Escape denies. Tab and Shift+Tab stay on the two buttons.
+- [ ] VoiceOver: the dialog is announced with its title and risk explanation.
+- [ ] `loki audit list` (same data dir) shows one row per attempt with the right outcome.
+
+## Last run
+
+Not yet run interactively (the agent can't operate the window). Covered by Vitest component tests
+and Rust broker tests; see the P5-T04 handoff.

@@ -97,10 +97,15 @@ Policy (loki-policy, implemented in P3-T02/T03)
 
 Streaming runtime API (loki-runtime, P5-T02; used by the Tauri commands)
   chat_turn(turn_id, conversation?, text?, sink) streams TurnEvents (text None = retry)
-  stop_turn(turn_id) -> bool; respond_approval(approval_id, approved) -> bool (single use; waits
-  at most until the approval expires). Desktop commands: send_message, retry_reply, stop_reply,
-  respond_approval, list_conversations, get_messages, app_status (each declared in build.rs and
-  granted in capabilities/default.json).
+  stop_turn(turn_id) -> bool
+  respond_approval(approval_id, approved, shown_arguments) -> bool. P5-T04: the UI sends back the
+    arguments it displayed. A "yes" that has expired or doesn't match the pending arguments
+    (integers exactly; a float equals the same integer) is delivered to the tool call as a refusal
+    and returns false. A "no" is always accepted. Single use; the tool call waits at most until
+    the approval expires; the store's single-use check still runs after a "yes".
+  Desktop commands: send_message, retry_reply, stop_reply, respond_approval, list_conversations,
+  get_messages, rename_conversation, delete_conversation, app_status (each declared in build.rs
+  and granted in capabilities/default.json).
 
 Agent tool loop (loki-agent, P3-T05)
   validate -> policy -> approval (ToolUi, default no) -> execute -> audit; results go back wrapped as
