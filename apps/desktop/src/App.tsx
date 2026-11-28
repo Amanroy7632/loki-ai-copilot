@@ -6,6 +6,7 @@ import { appStatus } from "./api";
 import { ChatView } from "./chat/ChatView";
 import { PermissionsView } from "./permissions/PermissionsView";
 import { SettingsView } from "./settings/SettingsView";
+import { VoiceBar } from "./voice/VoiceBar";
 
 type Section = "chat" | "permissions" | "settings";
 
@@ -55,6 +56,7 @@ export function App() {
             detail={load.status.detail ?? undefined}
           />
         )}
+        {load.kind === "ready" && <VoiceBar />}
       </header>
       {load.kind === "ready" && (
         <p className="app-meta">

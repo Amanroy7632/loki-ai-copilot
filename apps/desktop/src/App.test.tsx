@@ -1,4 +1,4 @@
-import type { AppStatus } from "@loki/contracts";
+import type { AppStatus, VoiceStatus } from "@loki/contracts";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
@@ -14,9 +14,22 @@ const base: AppStatus = {
   tools_enabled: true,
 };
 
+// The voice bar asks for the voice status; everything else returns an empty list.
+const VOICE: VoiceStatus = {
+  phase: "idle",
+  mic_open: false,
+  muted: false,
+  push_to_talk: { status: "unavailable", reason: "no speech-to-text" },
+};
+function answer(command: string, status: AppStatus) {
+  if (command === "app_status") return status;
+  if (command === "watch_voice" || command === "get_voice_status") return VOICE;
+  return [];
+}
+
 describe("App", () => {
   it("shows the provider and model from the runtime", async () => {
-    mockIPC((command) => (command === "app_status" ? base : []));
+    mockIPC((command) => answer(command, base));
     render(<App />);
     expect(await screen.findByText("ollama · bonsai-2:4b")).toBeInTheDocument();
     expect(screen.getByText(/Tools on/)).toBeInTheDocument();
@@ -24,7 +37,7 @@ describe("App", () => {
 
   it("labels the mock provider honestly and shows the startup note", async () => {
     const mock: AppStatus = { ...base, provider: "mock", model: null, detail: "No model selected yet" };
-    mockIPC((command) => (command === "app_status" ? mock : []));
+    mockIPC((command) => answer(command, mock));
     render(<App />);
     expect(await screen.findByText("Mock provider (no model)")).toBeInTheDocument();
     expect(screen.getByText("No model selected yet")).toBeInTheDocument();
@@ -48,7 +61,7 @@ describe("providerLabel", () => {
 describe("App sections", () => {
   it("switches to Permissions and back without unmounting the chat", async () => {
     const { default: userEvent } = await import("@testing-library/user-event");
-    mockIPC((command) => (command === "app_status" ? base : []));
+    mockIPC((command) => answer(command, base));
     const user = userEvent.setup();
     render(<App />);
     const nav = await screen.findByRole("navigation", { name: "Sections" });

@@ -7,6 +7,7 @@
 mod commands;
 mod lifecycle;
 mod settings;
+mod voice;
 
 use tauri::Manager;
 
@@ -55,6 +56,11 @@ fn main() {
             settings::export_data,
             lifecycle::get_autostart,
             lifecycle::set_autostart,
+            voice::get_voice_status,
+            voice::watch_voice,
+            voice::press_talk,
+            voice::release_talk,
+            voice::set_voice_muted,
         ])
         .build(tauri::generate_context!());
     match app {

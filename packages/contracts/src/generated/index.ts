@@ -35,4 +35,6 @@ export type { ToolSpec } from "./ToolSpec";
 export type { ToolStatus } from "./ToolStatus";
 export type { TurnEvent } from "./TurnEvent";
 export type { UnixMillis } from "./UnixMillis";
+export type { VoicePhase } from "./VoicePhase";
+export type { VoiceStatus } from "./VoiceStatus";
 export type { JsonValue } from "./serde_json/JsonValue";

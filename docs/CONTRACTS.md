@@ -221,3 +221,27 @@ the single-instance lock and quit-drains-work (2 s budget) are desktop-shell wir
 4. Add security tests if it touches files, network or other devices (see SECURITY_MODEL).
 5. Add a row to the registry table above.
 6. If the tool is `LocalChange` or `Sensitive`, make sure the approval preview shows every argument.
+
+## Voice API (P5-T08)
+
+```text
+VoicePhase = idle | listening | recording | transcribing | thinking | speaking | stopping | muted
+VoiceStatus { phase, mic_open, muted, push_to_talk: CapabilityStatus }
+```
+
+`loki-runtime::voice::VoiceControl` (from `Runtime::voice()`, usable while a turn holds the
+runtime lock) owns the `loki-voice` state machine: `status`, `subscribe(sink)` (receives the
+current status, then every change; a sink returning false is dropped), `press_talk`,
+`release_talk`, `set_muted`, `cancel`. `status_for(state, ..)` is the pure mapping;
+`mic_open = VoiceState::requires_capture()`, so the indicator can't drift from the state machine.
+`fixtures/voice-states.json` holds the table for every state (`VoiceState::ALL`) and is checked
+by a Rust test and read by the desktop's Vitest test.
+
+Push-to-talk reports `Unavailable` until local speech-to-text exists (P4-T04): pressing it is
+refused with the reason and the microphone stays off. Mute works: while muted nothing can start
+capture, and unmuting never starts it. Emergency stop and quit (`LifecycleControl`) also cancel
+voice; a stop never unmutes.
+
+Desktop commands: `get_voice_status`, `watch_voice(on_status: Channel<VoiceStatus>)`,
+`press_talk`, `release_talk`, `set_voice_muted(muted)`. The tray's Mute item and tooltip follow
+the same status stream.

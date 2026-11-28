@@ -1,0 +1,101 @@
+[
+  {
+    "state": "Idle",
+    "status": {
+      "mic_open": false,
+      "muted": false,
+      "phase": "idle",
+      "push_to_talk": {
+        "status": "supported"
+      }
+    }
+  },
+  {
+    "state": "Listening",
+    "status": {
+      "mic_open": true,
+      "muted": false,
+      "phase": "listening",
+      "push_to_talk": {
+        "status": "supported"
+      }
+    }
+  },
+  {
+    "state": "Recording",
+    "status": {
+      "mic_open": true,
+      "muted": false,
+      "phase": "recording",
+      "push_to_talk": {
+        "status": "supported"
+      }
+    }
+  },
+  {
+    "state": "Transcribing",
+    "status": {
+      "mic_open": false,
+      "muted": false,
+      "phase": "transcribing",
+      "push_to_talk": {
+        "status": "supported"
+      }
+    }
+  },
+  {
+    "state": "Thinking",
+    "status": {
+      "mic_open": false,
+      "muted": false,
+      "phase": "thinking",
+      "push_to_talk": {
+        "status": "supported"
+      }
+    }
+  },
+  {
+    "state": "Speaking",
+    "status": {
+      "mic_open": false,
+      "muted": false,
+      "phase": "speaking",
+      "push_to_talk": {
+        "status": "supported"
+      }
+    }
+  },
+  {
+    "state": "Cancelled",
+    "status": {
+      "mic_open": false,
+      "muted": false,
+      "phase": "stopping",
+      "push_to_talk": {
+        "status": "supported"
+      }
+    }
+  },
+  {
+    "state": "Muted { cleanup_pending: false }",
+    "status": {
+      "mic_open": false,
+      "muted": true,
+      "phase": "muted",
+      "push_to_talk": {
+        "status": "supported"
+      }
+    }
+  },
+  {
+    "state": "Muted { cleanup_pending: true }",
+    "status": {
+      "mic_open": false,
+      "muted": true,
+      "phase": "muted",
+      "push_to_talk": {
+        "status": "supported"
+      }
+    }
+  }
+]

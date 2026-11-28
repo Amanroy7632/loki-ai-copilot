@@ -138,6 +138,7 @@ pub struct Runtime {
     tools: Option<Arc<ToolHost>>,
     turns: Arc<crate::stream::TurnRegistry>,
     approvals: Arc<crate::stream::ApprovalBroker>,
+    voice: crate::voice::VoiceControl,
     _logging: Option<LoggingGuard>,
 }
 
@@ -250,6 +251,9 @@ impl Runtime {
             tools,
             turns: Arc::default(),
             approvals: Arc::default(),
+            voice: crate::voice::VoiceControl::new(CapabilityStatus::Unavailable {
+                reason: String::from(crate::voice::NO_SPEECH_TO_TEXT),
+            }),
             _logging: logging,
         })
     }
@@ -530,7 +534,13 @@ impl Runtime {
     pub fn lifecycle_control(&self) -> crate::LifecycleControl {
         crate::LifecycleControl {
             turns: Arc::clone(&self.turns),
+            voice: self.voice.clone(),
         }
+    }
+
+    /// Voice session control (P5-T08), usable while a turn holds the runtime lock.
+    pub fn voice(&self) -> crate::voice::VoiceControl {
+        self.voice.clone()
     }
 
     /// Stops a running turn (the UI's Stop button). Returns `false` if it isn't running.

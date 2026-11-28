@@ -37,6 +37,7 @@ impl AutostartBackend for NativeAutostart {
 pub struct DesktopLifecycle {
     pub autostart: AutostartService,
     control: loki_runtime::LifecycleControl,
+    voice: loki_runtime::voice::VoiceControl,
     quitting: AtomicBool,
     exit_ready: AtomicBool,
 }
@@ -58,17 +59,12 @@ pub fn install(app: &tauri::AppHandle, state: &AppState) -> Result<(), Box<dyn s
     app.manage(DesktopLifecycle {
         autostart: AutostartService::new(NativeAutostart(app.clone()), unavailable),
         control: state.control.clone(),
+        voice: state.voice.clone(),
         quitting: AtomicBool::new(false),
         exit_ready: AtomicBool::new(false),
     });
     let toggle = MenuItem::with_id(app, "toggle", "Show / hide Loki", true, None::<&str>)?;
-    let mute = MenuItem::with_id(
-        app,
-        "mute",
-        "Mute microphone (voice unavailable)",
-        false,
-        None::<&str>,
-    )?;
+    let mute = MenuItem::with_id(app, "mute", "Mute voice", true, None::<&str>)?;
     let stop = MenuItem::with_id(app, "stop", "Emergency stop", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Loki", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&toggle, &mute, &stop, &quit])?;
@@ -76,7 +72,7 @@ pub fn install(app: &tauri::AppHandle, state: &AppState) -> Result<(), Box<dyn s
         .default_window_icon()
         .ok_or("missing tray icon")?
         .clone();
-    TrayIconBuilder::with_id("loki-tray")
+    let tray = TrayIconBuilder::with_id("loki-tray")
         .icon(icon)
         .tooltip("Loki — microphone off")
         .menu(&menu)
@@ -91,11 +87,34 @@ pub fn install(app: &tauri::AppHandle, state: &AppState) -> Result<(), Box<dyn s
                     }
                 }
             }
+            "mute" => {
+                let voice = &app.state::<DesktopLifecycle>().voice;
+                voice.set_muted(!voice.status().muted);
+            }
             "stop" => app.state::<DesktopLifecycle>().control.emergency_stop(),
             "quit" => request_quit(app),
             _ => {}
         })
         .build(app)?;
+    // The tray follows the runtime's voice state: its label and tooltip always say whether the
+    // microphone is on, including changes made from the window (P5-T08).
+    state.voice.subscribe(std::sync::Arc::new(move |status| {
+        let label = if status.muted {
+            "Unmute voice"
+        } else {
+            "Mute voice"
+        };
+        let tooltip = if status.mic_open {
+            "Loki — microphone ON"
+        } else if status.muted {
+            "Loki — voice muted"
+        } else {
+            "Loki — microphone off"
+        };
+        report(mute.set_text(label));
+        report(tray.set_tooltip(Some(tooltip)));
+        true
+    }));
     if !std::env::args_os().any(|arg| arg == "--autostart") {
         show(app);
     }

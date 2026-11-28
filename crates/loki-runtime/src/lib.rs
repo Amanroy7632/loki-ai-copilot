@@ -36,6 +36,7 @@ pub mod paths;
 pub mod redact;
 pub mod stream;
 pub mod tooling;
+pub mod voice;
 
 pub use app::{PermissionRow, ReplyOutcome, Runtime, RuntimeOptions};
 pub use config::{Config, NetworkMode, ProviderKind};

@@ -32,6 +32,23 @@ pub enum VoiceState {
 }
 
 impl VoiceState {
+    /// Every state, for exhaustive tests and for the front-end indicator fixture (P5-T08).
+    pub const ALL: [Self; 9] = [
+        Self::Idle,
+        Self::Listening,
+        Self::Recording,
+        Self::Transcribing,
+        Self::Thinking,
+        Self::Speaking,
+        Self::Cancelled,
+        Self::Muted {
+            cleanup_pending: false,
+        },
+        Self::Muted {
+            cleanup_pending: true,
+        },
+    ];
+
     /// Whether the runtime may capture audio and must display a listening indicator.
     /// This describes desired ownership, not whether an OS device has actually opened.
     pub const fn requires_capture(self) -> bool {

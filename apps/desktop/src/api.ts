@@ -15,6 +15,7 @@ import type {
   PermissionRow,
   SettingsSnapshot,
   TurnEvent,
+  VoiceStatus,
 } from "@loki/contracts";
 import { Channel, invoke } from "@tauri-apps/api/core";
 
@@ -216,4 +217,35 @@ export function getAutostart(): Promise<AutostartStatus> {
 /** Turns start at login on or off; resolves to the state the OS reports afterwards. */
 export function setAutostart(enabled: boolean): Promise<AutostartStatus> {
   return invoke<AutostartStatus>("set_autostart", { enabled });
+}
+
+// ------------------------------------------------------------------ voice (P5-T08)
+
+/** Current voice state: phase, whether the microphone may be open, mute, push-to-talk availability. */
+export function getVoiceStatus(): Promise<VoiceStatus> {
+  return invoke<VoiceStatus>("get_voice_status");
+}
+
+/**
+ * Follows every voice change (including tray mute) until the window closes. Resolves to the
+ * current status; `onStatus` also receives it first.
+ */
+export function watchVoice(onStatus: (status: VoiceStatus) => void): Promise<VoiceStatus> {
+  const channel = new Channel<VoiceStatus>();
+  channel.onmessage = onStatus;
+  return invoke<VoiceStatus>("watch_voice", { onStatus: channel });
+}
+
+/** Rejects with the reason while muted or while push-to-talk is unavailable. */
+export function pressTalk(): Promise<VoiceStatus> {
+  return invoke<VoiceStatus>("press_talk");
+}
+
+export function releaseTalk(): Promise<VoiceStatus> {
+  return invoke<VoiceStatus>("release_talk");
+}
+
+/** Muting always succeeds and turns the microphone off at once. */
+export function setVoiceMuted(muted: boolean): Promise<VoiceStatus> {
+  return invoke<VoiceStatus>("set_voice_muted", { muted });
 }

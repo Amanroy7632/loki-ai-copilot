@@ -16,12 +16,13 @@ import type {
   Risk,
   SettingsSnapshot,
   TurnEvent,
+  VoiceStatus,
 } from "@loki/contracts";
 import type { Channel } from "@tauri-apps/api/core";
 import { mockIPC } from "@tauri-apps/api/mocks";
 
 interface TauriInternals {
-  runCallback(id: number, frame: { index: number; message: TurnEvent }): void;
+  runCallback(id: number, frame: { index: number; message: TurnEvent | VoiceStatus }): void;
 }
 
 function internals(): TauriInternals {
@@ -50,6 +51,9 @@ export interface FakeBackend {
   autostart: AutostartStatus;
   /** The next autostart change fails with this message (e.g. the OS refused). */
   autostartError: string | null;
+  /** The runtime's voice status. Change it with `setVoice` to simulate the tray or the runtime. */
+  voice: VoiceStatus;
+  setVoice(next: VoiceStatus): void;
   audit: AuditEntry[];
   busy: boolean;
   exportPicked: boolean;
@@ -106,9 +110,20 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
   let releaseGate: (() => void) | null = null;
   const stopped = new Set<string>();
 
+  const voiceWatchers: { send: (status: VoiceStatus) => void }[] = [];
   const backend: FakeBackend = {
     autostart: { enabled: false, availability: { status: "supported" } },
     autostartError: null,
+    voice: {
+      phase: "idle",
+      mic_open: false,
+      muted: false,
+      push_to_talk: { status: "unavailable", reason: "Push-to-talk needs local speech-to-text." },
+    },
+    setVoice: (next) => {
+      backend.voice = next;
+      for (const watcher of voiceWatchers) watcher.send(next);
+    },
     settings: {
       values: { provider: "mock", model_id: null, network_mode: "local_only", history_days: null },
       memory: { status: "unavailable", reason: "Personal memory is not available yet." },
@@ -237,6 +252,37 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
           provider: backend.settings.values.provider,
           model: backend.settings.values.model_id,
         };
+      case "get_voice_status":
+        return structuredClone(backend.voice);
+      case "watch_voice": {
+        const channel = args.onStatus as Channel<VoiceStatus>;
+        let index = 0;
+        const watcher = {
+          send: (status: VoiceStatus) =>
+            internals().runCallback(channel.id, { index: index++, message: status }),
+        };
+        voiceWatchers.push(watcher);
+        watcher.send(backend.voice);
+        return structuredClone(backend.voice);
+      }
+      case "press_talk":
+        if (backend.voice.muted) throw new Error("Voice is muted. Unmute to talk.");
+        if (backend.voice.push_to_talk.status !== "supported")
+          throw new Error(backend.voice.push_to_talk.reason);
+        backend.setVoice({ ...backend.voice, phase: "recording", mic_open: true });
+        return structuredClone(backend.voice);
+      case "release_talk":
+        if (backend.voice.phase === "recording") {
+          backend.setVoice({ ...backend.voice, phase: "transcribing", mic_open: false });
+        }
+        return structuredClone(backend.voice);
+      case "set_voice_muted": {
+        const muted = args.muted as boolean;
+        if (muted !== backend.voice.muted) {
+          backend.setVoice({ ...backend.voice, muted, mic_open: false, phase: muted ? "muted" : "idle" });
+        }
+        return structuredClone(backend.voice);
+      }
       case "get_autostart":
         return structuredClone(backend.autostart);
       case "set_autostart": {

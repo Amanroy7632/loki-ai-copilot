@@ -26,6 +26,11 @@ fn main() {
             "export_data",
             "get_autostart",
             "set_autostart",
+            "get_voice_status",
+            "watch_voice",
+            "press_talk",
+            "release_talk",
+            "set_voice_muted",
         ]));
     if let Err(error) = tauri_build::try_build(attributes) {
         panic!("tauri build configuration failed: {error:#}");

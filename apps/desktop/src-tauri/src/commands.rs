@@ -14,6 +14,7 @@ use tauri::ipc::Channel;
 /// Shared application state: the runtime and the startup note (e.g. "no model selected").
 pub struct AppState {
     pub(crate) control: loki_runtime::LifecycleControl,
+    pub(crate) voice: loki_runtime::voice::VoiceControl,
     pub(crate) runtime: RwLock<Runtime>,
     pub(crate) note: RwLock<Option<String>>,
 }
@@ -29,6 +30,7 @@ impl AppState {
         })?;
         Ok(Self {
             control: runtime.lifecycle_control(),
+            voice: runtime.voice(),
             runtime: RwLock::new(runtime),
             note: RwLock::new(note),
         })

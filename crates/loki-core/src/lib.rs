@@ -26,6 +26,7 @@ pub mod settings;
 pub mod task;
 pub mod time;
 pub mod tool;
+pub mod voice;
 
 pub use api::{AllowedRootInfo, AppStatus, ApprovalPreview, PermissionRow, TurnEvent};
 pub use capability::{Capability, CapabilityStatus};
@@ -42,3 +43,4 @@ pub use settings::{
 pub use task::TaskState;
 pub use time::UnixMillis;
 pub use tool::{ErrorCode, Risk, ToolRequest, ToolResult, ToolSpec, ToolStatus};
+pub use voice::{VoicePhase, VoiceStatus};
