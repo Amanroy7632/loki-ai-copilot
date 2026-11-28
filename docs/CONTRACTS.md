@@ -104,8 +104,20 @@ Streaming runtime API (loki-runtime, P5-T02; used by the Tauri commands)
     and returns false. A "no" is always accepted. Single use; the tool call waits at most until
     the approval expires; the store's single-use check still runs after a "yes".
   Desktop commands: send_message, retry_reply, stop_reply, respond_approval, list_conversations,
-  get_messages, rename_conversation, delete_conversation, app_status (each declared in build.rs
-  and granted in capabilities/default.json).
+  get_messages, rename_conversation, delete_conversation, app_status, and (P5-T05)
+  list_permissions, list_roots, grant_permission, revoke_permission, add_root, remove_root (each
+  declared in build.rs and granted in capabilities/default.json; no plugin permissions).
+
+Permissions API (loki-runtime, P5-T05; contract types PermissionRow, AllowedRootInfo in loki-core)
+  permissions() -> [PermissionRow { capability, status, scopes }]   (every capability, always)
+  roots() -> [AllowedRootInfo { id, path }]
+  grant(capability, scope) / revoke(capability, scope)   scope = "*" or an allowed-root ID;
+    granting an Unavailable capability is refused; grants are read on every tool call, so a
+    revoke denies the very next call
+  validate_root_id(id); add_root(id, path) (async) -> AllowedRootInfo; remove_root(id) (async)
+    -> bool. Removing a root or repointing its ID revokes its grants; both rebuild the tool host.
+  Desktop add_root(id) opens the native folder picker from Rust; the page never sends a path
+    (ADR-0014). Returns null when the user cancels.
 
 Agent tool loop (loki-agent, P3-T05)
   validate -> policy -> approval (ToolUi, default no) -> execute -> audit; results go back wrapped as

@@ -112,7 +112,8 @@ CREATE TABLE devices (
 ```
 
 Allowed roots are referred to by `root_id`. The root ID to absolute path mapping lives in config,
-or a `roots` table if needed, and the model never sees absolute paths.
+or a `roots` table if needed, and the model never sees absolute paths. Removing a root, or pointing its ID
+at a different folder, revokes every grant with that scope (P5-T05, ADR-0014).
 
 ## Rules
 

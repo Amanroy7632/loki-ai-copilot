@@ -1,5 +1,16 @@
 // Typed wrappers around Loki's Tauri commands. Types come only from @loki/contracts (generated).
-import type { AppStatus, Conversation, ConversationId, JsonValue, Message, TurnEvent } from "@loki/contracts";
+import type {
+  AllowedRootInfo,
+  AppStatus,
+  Capability,
+  Conversation,
+  ConversationId,
+  Grant,
+  JsonValue,
+  Message,
+  PermissionRow,
+  TurnEvent,
+} from "@loki/contracts";
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 export function appStatus(): Promise<AppStatus> {
@@ -110,4 +121,34 @@ export function streamTurn(
       },
     );
   });
+}
+
+// ------------------------------------------------------------------ permissions (P5-T05)
+
+export function listPermissions(): Promise<PermissionRow[]> {
+  return invoke<PermissionRow[]>("list_permissions");
+}
+
+export function listRoots(): Promise<AllowedRootInfo[]> {
+  return invoke<AllowedRootInfo[]>("list_roots");
+}
+
+/** `scope` is `*`, or an allowed-root ID for `file_read`. */
+export function grantPermission(capability: Capability, scope: string): Promise<Grant> {
+  return invoke<Grant>("grant_permission", { capability, scope });
+}
+
+/** Takes effect for the very next tool call. Resolves to how many grants were revoked. */
+export function revokePermission(capability: Capability, scope: string): Promise<number> {
+  return invoke<number>("revoke_permission", { capability, scope });
+}
+
+/** Opens the native folder picker; `null` when the user cancels. The path never comes from the page. */
+export function addRoot(id: string): Promise<AllowedRootInfo | null> {
+  return invoke<AllowedRootInfo | null>("add_root", { id });
+}
+
+/** Removes the folder and revokes its grants. */
+export function removeRoot(id: string): Promise<boolean> {
+  return invoke<boolean>("remove_root", { id });
 }

@@ -183,7 +183,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             } => history_show(&runtime, &ConversationId::new(id)).await,
             Command::Models { command } => models::run(&mut runtime, command).await,
             Command::Permissions { command } => admin::permissions(&runtime, command).await,
-            Command::Roots { command } => admin::roots(&mut runtime, command),
+            Command::Roots { command } => admin::roots(&mut runtime, command).await,
             Command::Apps { query } => admin::apps(&runtime, query).await,
             Command::Audit { command } => admin::audit(&runtime, command).await,
         }

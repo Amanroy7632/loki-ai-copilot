@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window may call only Loki's own commands. No core plugins, no shell, no filesystem, no HTTP. IPC channels need no extra permission.",
+  "description": "The main window may call only Loki's own commands. No core plugins, no dialog (the folder picker opens from Rust), no shell, no filesystem, no HTTP. IPC channels need no extra permission.",
   "windows": ["main"],
   "permissions": [
     "allow-app-status",
@@ -12,6 +12,12 @@
     "allow-list-conversations",
     "allow-get-messages",
     "allow-rename-conversation",
-    "allow-delete-conversation"
+    "allow-delete-conversation",
+    "allow-list-permissions",
+    "allow-list-roots",
+    "allow-grant-permission",
+    "allow-revoke-permission",
+    "allow-add-root",
+    "allow-remove-root"
   ]
 }

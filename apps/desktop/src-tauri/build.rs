@@ -13,6 +13,12 @@ fn main() {
             "get_messages",
             "rename_conversation",
             "delete_conversation",
+            "list_permissions",
+            "list_roots",
+            "grant_permission",
+            "revoke_permission",
+            "add_root",
+            "remove_root",
         ]));
     if let Err(error) = tauri_build::try_build(attributes) {
         panic!("tauri build configuration failed: {error:#}");

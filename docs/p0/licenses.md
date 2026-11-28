@@ -39,3 +39,16 @@ Verified with `cargo info` before adding; pinned exactly and locked. See ADR-001
 | crossbeam-queue | 0.3.14 | MIT OR Apache-2.0 | Preallocated bounded buffer, replacing oldest frames |
 
 The existing `cargo deny` policy applies to their transitive dependencies without new exceptions.
+
+## P5-T05 folder picker (2026-11-28)
+
+See ADR-0014. Each version is at least two weeks old, pinned or locked exactly.
+
+| Crate | Version | License | Use |
+| --- | --- | --- | --- |
+| tauri-plugin-dialog | 2.8.4 | Apache-2.0 OR MIT | Native folder picker, opened from Rust only |
+| tauri-plugin-fs | 2.7.1 | Apache-2.0 OR MIT | Library dependency of the dialog plugin (not registered) |
+| rfd | 0.17.2 | MIT | Native dialogs (AppKit, GTK3, Win32) |
+| tauri-plugin | 2.7.2 | Apache-2.0 OR MIT | Build helper; locked below 2.7.3/2.7.4 (too new) |
+
+`cargo deny check` passes with no new exceptions.

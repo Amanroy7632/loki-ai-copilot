@@ -3,7 +3,16 @@
 // the mock provider ("Mock reply: <text>", one word per token). With `approval`, the next turn asks
 // for one first and answers like the runtime broker: a "yes" counts only if it is unexpired and
 // carries the arguments that were shown.
-import type { AppStatus, Conversation, JsonValue, Message, Risk, TurnEvent } from "@loki/contracts";
+import type {
+  AllowedRootInfo,
+  AppStatus,
+  Conversation,
+  JsonValue,
+  Message,
+  PermissionRow,
+  Risk,
+  TurnEvent,
+} from "@loki/contracts";
 import type { Channel } from "@tauri-apps/api/core";
 import { mockIPC } from "@tauri-apps/api/mocks";
 
@@ -24,6 +33,11 @@ export interface FakeBackendOptions {
   messages?: Record<string, Message[]>;
   /** The next turn requests this approval before replying. */
   approval?: { tool: string; risk: Risk; arguments: JsonValue; ttlMs?: number };
+  /** Permission rows (default: `DEFAULT_PERMISSIONS`). */
+  permissions?: PermissionRow[];
+  roots?: AllowedRootInfo[];
+  /** What the "native folder picker" returns; `null` = the user cancelled. */
+  pickFolder?: string | null;
 }
 
 export interface FakeBackend {
@@ -35,7 +49,31 @@ export interface FakeBackend {
   failWith: string | null;
   /** Each approval answer and whether the fake runtime accepted it. */
   answers: { approvalId: string; approved: boolean; shownArguments: JsonValue; accepted: boolean }[];
+  permissions: PermissionRow[];
+  roots: AllowedRootInfo[];
+  pickFolder: string | null;
 }
+
+/** Like the macOS adapter today: some capabilities work, later-phase ones are unavailable. */
+export const DEFAULT_PERMISSIONS: PermissionRow[] = [
+  { capability: "clock", status: { status: "supported" }, scopes: [] },
+  { capability: "system_info", status: { status: "supported" }, scopes: [] },
+  { capability: "app_launch", status: { status: "supported" }, scopes: [] },
+  { capability: "file_read", status: { status: "supported" }, scopes: [] },
+  { capability: "network", status: { status: "unavailable", reason: "Web tools arrive in P7." }, scopes: [] },
+  {
+    capability: "microphone",
+    status: {
+      status: "permission_required",
+      reason: "Allow Loki in System Settings › Privacy › Microphone.",
+    },
+    scopes: [],
+  },
+  { capability: "notifications", status: { status: "unavailable", reason: "Not built yet." }, scopes: [] },
+  { capability: "developer_tools", status: { status: "unavailable", reason: "Not built yet." }, scopes: [] },
+];
+
+const ROOT_ID = /^[a-z0-9_-]{1,32}$/;
 
 export const STATUS: AppStatus = {
   version: "0.0.1",
@@ -61,6 +99,13 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
     release: () => releaseGate?.(),
     failWith: options.failWith ?? null,
     answers: [],
+    permissions: structuredClone(options.permissions ?? DEFAULT_PERMISSIONS),
+    roots: structuredClone(options.roots ?? []),
+    pickFolder: options.pickFolder ?? null,
+  };
+  /** Revokes every grant with this scope, like the runtime's `revoke_scope`. */
+  const revokeScope = (scope: string) => {
+    for (const row of backend.permissions) row.scopes = row.scopes.filter((s) => s !== scope);
   };
   let approvalConfig = options.approval ?? null;
   const waiting = new Map<
@@ -219,6 +264,48 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
         entry?.resolve(approved && accepted);
         backend.answers.push({ approvalId, approved, shownArguments, accepted });
         return accepted;
+      }
+      case "list_permissions":
+        return structuredClone(backend.permissions);
+      case "list_roots":
+        return structuredClone(backend.roots);
+      case "grant_permission": {
+        const capability = args.capability as string;
+        const scope = args.scope as string;
+        const row = backend.permissions.find((r) => r.capability === capability);
+        if (!row) throw new Error(`unknown capability '${capability}'`);
+        if (row.status.status === "unavailable") {
+          throw new Error(`${capability} is unavailable here: ${row.status.reason}`);
+        }
+        if (scope !== "*" && !backend.roots.some((r) => r.id === scope)) {
+          throw new Error(`scope must be '*' or an allowed root ID, not '${scope}'`);
+        }
+        if (!row.scopes.includes(scope)) row.scopes = [...row.scopes, scope].sort();
+        return { capability, scope };
+      }
+      case "revoke_permission": {
+        const row = backend.permissions.find((r) => r.capability === args.capability);
+        const before = row?.scopes.length ?? 0;
+        if (row) row.scopes = row.scopes.filter((s) => s !== args.scope);
+        return before - (row?.scopes.length ?? 0);
+      }
+      case "add_root": {
+        const id = args.id as string;
+        if (!ROOT_ID.test(id)) throw new Error("folder names are 1-32 of a-z, 0-9, _ or -");
+        const path = backend.pickFolder;
+        if (path === null) return null;
+        const existing = backend.roots.find((r) => r.id === id);
+        if (existing && existing.path !== path) revokeScope(id);
+        const root = { id, path };
+        backend.roots = [...backend.roots.filter((r) => r.id !== id), root];
+        return root;
+      }
+      case "remove_root": {
+        const id = args.id as string;
+        if (!backend.roots.some((r) => r.id === id)) return false;
+        revokeScope(id);
+        backend.roots = backend.roots.filter((r) => r.id !== id);
+        return true;
       }
       case "rename_conversation": {
         const id = args.conversationId as string;

@@ -10,6 +10,9 @@ use tauri::Manager;
 
 fn main() {
     let app = tauri::Builder::default()
+        // Registered for the Rust-side folder picker only; no capability grants `dialog:` to the
+        // webview, so its own JS commands stay denied.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let state = commands::AppState::open()?;
             app.manage(state);
@@ -25,6 +28,12 @@ fn main() {
             commands::get_messages,
             commands::rename_conversation,
             commands::delete_conversation,
+            commands::list_permissions,
+            commands::list_roots,
+            commands::grant_permission,
+            commands::revoke_permission,
+            commands::add_root,
+            commands::remove_root,
         ])
         .run(tauri::generate_context!());
     if let Err(error) = app {

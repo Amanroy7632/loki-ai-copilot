@@ -117,7 +117,7 @@ pub async fn permissions(runtime: &Runtime, command: PermissionsCommand) -> anyh
     Ok(())
 }
 
-pub fn roots(runtime: &mut Runtime, command: RootsCommand) -> anyhow::Result<()> {
+pub async fn roots(runtime: &mut Runtime, command: RootsCommand) -> anyhow::Result<()> {
     match command {
         RootsCommand::List => {
             let roots = &runtime.config().allowed_roots;
@@ -129,14 +129,14 @@ pub fn roots(runtime: &mut Runtime, command: RootsCommand) -> anyhow::Result<()>
             }
         }
         RootsCommand::Add { id, path } => {
-            runtime.add_root(&id, &path)?;
+            runtime.add_root(&id, &path).await?;
             println!(
                 "Added root '{id}'. File tools also need: loki permissions grant file_read --scope {id}"
             );
         }
         RootsCommand::Remove { id } => {
-            if runtime.remove_root(&id)? {
-                println!("Removed root '{id}'.");
+            if runtime.remove_root(&id).await? {
+                println!("Removed root '{id}' and revoked its grants.");
             } else {
                 bail!("no root '{id}'");
             }

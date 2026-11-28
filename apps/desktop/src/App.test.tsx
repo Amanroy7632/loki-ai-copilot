@@ -44,3 +44,22 @@ describe("providerLabel", () => {
     expect(providerLabel({ ...base, provider: "mock", model: "qwen3:4b" })).toBe("Mock provider (no model)");
   });
 });
+
+describe("App sections", () => {
+  it("switches to Permissions and back without unmounting the chat", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    mockIPC((command) => (command === "app_status" ? base : []));
+    const user = userEvent.setup();
+    render(<App />);
+    const nav = await screen.findByRole("navigation", { name: "Sections" });
+    expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-current", "page");
+    await user.click(screen.getByRole("button", { name: "Permissions" }));
+    expect(await screen.findByRole("heading", { name: "Permissions", level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Permissions" })).toHaveAttribute("aria-current", "page");
+    // The chat is hidden, not gone: a running reply or pending approval survives.
+    expect(screen.getByRole("textbox", { name: "Message", hidden: true })).not.toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Chat" }));
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
+    expect(nav).toBeInTheDocument();
+  });
+});

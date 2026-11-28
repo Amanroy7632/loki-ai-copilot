@@ -15,8 +15,8 @@ use loki_agent::{
     TurnResult,
 };
 use loki_core::{
-    Capability, CapabilityStatus, Conversation, ConversationId, Grant, Message, MessageId, TaskId,
-    UnixMillis,
+    AllowedRootInfo, Capability, CapabilityStatus, Conversation, ConversationId, Grant, Message,
+    MessageId, TaskId, UnixMillis,
 };
 use loki_llm::{
     CancellationToken, ChatProvider, InstalledModel, MockProvider, OllamaApi, OllamaProvider,
@@ -35,16 +35,8 @@ use crate::paths::Paths;
 use crate::redact::Redactor;
 use crate::tooling::build_tool_host;
 
-/// One capability as shown by `loki permissions list`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PermissionRow {
-    /// The capability.
-    pub capability: Capability,
-    /// What the platform reports right now.
-    pub status: CapabilityStatus,
-    /// Granted scopes (empty = not granted).
-    pub scopes: Vec<String>,
-}
+/// One capability as shown by `loki permissions list` and the permissions screen.
+pub use loki_core::PermissionRow;
 
 /// Longest conversation title derived from the first message, in characters.
 const TITLE_MAX_CHARS: usize = 60;
@@ -618,17 +610,45 @@ impl Runtime {
         })
     }
 
-    /// Adds an allowed root to the config. The path must be an existing directory.
-    pub fn add_root(&mut self, id: &str, path: &std::path::Path) -> Result<(), RuntimeError> {
-        let valid_id = (1..=32).contains(&id.len())
+    /// The allowed roots, for display (the model only sees the IDs).
+    pub fn roots(&self) -> Vec<AllowedRootInfo> {
+        self.config
+            .allowed_roots
+            .iter()
+            .map(|root| AllowedRootInfo {
+                id: root.id.clone(),
+                path: root.path.display().to_string(),
+            })
+            .collect()
+    }
+
+    /// Checks a root ID before anything else happens (the desktop app calls this before it
+    /// opens the folder picker, so the user isn't asked to pick a folder for an invalid name).
+    pub fn validate_root_id(id: &str) -> Result<(), RuntimeError> {
+        let valid = (1..=32).contains(&id.len())
             && id
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-');
-        if !valid_id {
-            return Err(RuntimeError::InvalidInput(String::from(
-                "root IDs are 1-32 of a-z, 0-9, _ or -",
-            )));
+        if valid {
+            Ok(())
+        } else {
+            Err(RuntimeError::InvalidInput(String::from(
+                "folder names are 1-32 of a-z, 0-9, _ or -",
+            )))
         }
+    }
+
+    /// Adds (or repoints) an allowed root. The path must be an existing directory.
+    ///
+    /// If the ID already named a **different** folder, its grants are revoked first: a grant
+    /// was given for the folder the user saw, so it must not silently carry over to another
+    /// one. The file tools see the change immediately (no restart).
+    pub async fn add_root(
+        &mut self,
+        id: &str,
+        path: &std::path::Path,
+    ) -> Result<AllowedRootInfo, RuntimeError> {
+        Self::validate_root_id(id)?;
         let canonical = path
             .canonicalize()
             .ok()
@@ -639,29 +659,80 @@ impl Runtime {
                     path.display()
                 ))
             })?;
+        let repointed = self
+            .config
+            .allowed_roots
+            .iter()
+            .any(|root| root.id == id && root.path != canonical);
+        if repointed {
+            self.revoke_scope(id).await?;
+        }
         let mut config = self.config.clone();
         config.allowed_roots.retain(|root| root.id != id);
         config.allowed_roots.push(crate::config::AllowedRoot {
             id: id.to_owned(),
-            path: canonical,
+            path: canonical.clone(),
         });
         config::save(&self.paths.config_file(), &config)?;
         self.config = config;
-        Ok(())
+        self.reload_tools()?;
+        Ok(AllowedRootInfo {
+            id: id.to_owned(),
+            path: canonical.display().to_string(),
+        })
     }
 
-    /// Removes an allowed root from the config (its grants stay in the table but can no longer
-    /// match, because the root no longer resolves). Returns whether it existed.
-    pub fn remove_root(&mut self, id: &str) -> Result<bool, RuntimeError> {
-        let mut config = self.config.clone();
-        let before = config.allowed_roots.len();
-        config.allowed_roots.retain(|root| root.id != id);
-        let removed = config.allowed_roots.len() != before;
-        if removed {
-            config::save(&self.paths.config_file(), &config)?;
-            self.config = config;
+    /// Removes an allowed root and revokes every grant scoped to it, so a later root with the
+    /// same ID starts with no access. Returns whether it existed.
+    pub async fn remove_root(&mut self, id: &str) -> Result<bool, RuntimeError> {
+        if !self.config.allowed_roots.iter().any(|root| root.id == id) {
+            return Ok(false);
         }
-        Ok(removed)
+        // Revoke first: if that fails, the root stays and nothing widens.
+        self.revoke_scope(id).await?;
+        let mut config = self.config.clone();
+        config.allowed_roots.retain(|root| root.id != id);
+        config::save(&self.paths.config_file(), &config)?;
+        self.config = config;
+        self.reload_tools()?;
+        Ok(true)
+    }
+
+    /// Revokes every active grant with this exact scope.
+    async fn revoke_scope(&self, scope: &str) -> Result<usize, RuntimeError> {
+        let scope = scope.to_owned();
+        Ok(self
+            .store
+            .run(move |db| {
+                let now = UnixMillis::now();
+                let mut revoked = 0;
+                for grant in db.active_grants()?.iter().filter(|g| g.scope == scope) {
+                    revoked += db.revoke(grant, now)?;
+                }
+                Ok(revoked)
+            })
+            .await?)
+    }
+
+    /// Rebuilds the tool host (and the orchestrator that holds it) from the current config, so
+    /// a long-running front end sees root changes without a restart.
+    fn reload_tools(&mut self) -> Result<(), RuntimeError> {
+        let (tools, warnings) =
+            build_tool_host(&self.config, &self.store, Arc::clone(&self.platform))?;
+        for warning in &warnings {
+            tracing::warn!("{warning}");
+        }
+        self.orchestrator = build_orchestrator(
+            &self.config,
+            &self.store,
+            self.http,
+            self.provider_kind,
+            self.model.as_deref(),
+            self.mock.clone(),
+            tools.clone(),
+        )?;
+        self.tools = tools;
+        Ok(())
     }
 
     /// Audit rows, newest first (redacted summaries only).
