@@ -191,12 +191,22 @@ impl Runtime {
         }
 
         let db = Database::open(&paths.database_file())?;
-        db.apply_retention(config.retention.history_days, UnixMillis::now())?;
+        // Retention runs on every start. A failure (another Loki process holding the database,
+        // a locked file) must not keep the app from starting: it is reported and retried on the
+        // next start or save. History it couldn't delete stays until then.
+        let retention_warning = db
+            .apply_retention(config.retention.history_days, UnixMillis::now())
+            .err()
+            .map(|error| format!("history retention didn't finish and will retry: {error}"));
         // Startup recovery (P3-T04): unfinished tasks become Interrupted and are never re-run.
         // `open` is blocking by contract, so this runs synchronously before the store exists.
         let interrupted = db.recover_interrupted_tasks(UnixMillis::now())?;
         let store = MemoryStore::new(db);
         let mut warnings = loaded.warnings;
+        if let Some(warning) = retention_warning {
+            tracing::warn!("{warning}");
+            warnings.push(warning);
+        }
         if interrupted > 0 {
             tracing::warn!(
                 interrupted,

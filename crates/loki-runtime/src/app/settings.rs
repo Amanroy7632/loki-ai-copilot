@@ -17,11 +17,13 @@ impl Runtime {
         };
         SettingsSnapshot {
             values: DesktopSettings {
-                provider: match self.provider_kind {
+                // The saved choice, not this run's override (`LOKI_PROVIDER`, `--provider`, or
+                // the labelled mock before onboarding): saving must never persist an override.
+                provider: match self.config.provider {
                     ProviderKind::Mock => SettingsProvider::Mock,
                     ProviderKind::Ollama => SettingsProvider::Ollama,
                 },
-                model_id: self.model.clone(),
+                model_id: self.config.model_id.clone(),
                 network_mode: self.config.network_mode,
                 history_days: self.config.retention.history_days,
             },
@@ -72,14 +74,23 @@ impl Runtime {
         candidate.model_id = model;
         candidate.network_mode = settings.network_mode;
         candidate.retention.history_days = settings.history_days;
+        // Switch the active provider only when the user changed provider or model. Otherwise
+        // this run keeps its override (e.g. the mock before a model is chosen).
+        let provider_changed = candidate.provider != self.config.provider
+            || candidate.model_id != self.config.model_id;
+        let (kind, model) = if provider_changed {
+            (candidate.provider, candidate.model_id.clone())
+        } else {
+            (self.provider_kind, self.model.clone())
+        };
         let http = HttpClients::new(candidate.network_mode);
         let (tools, _) = build_tool_host(&candidate, &self.store, Arc::clone(&self.platform))?;
         let orchestrator = build_orchestrator(
             &candidate,
             &self.store,
             http,
-            candidate.provider,
-            candidate.model_id.as_deref(),
+            kind,
+            model.as_deref(),
             self.mock.clone(),
             tools.clone(),
         )?;
@@ -88,8 +99,8 @@ impl Runtime {
         tokio::task::spawn_blocking(move || config::save(&path, &saved))
             .await
             .map_err(|error| RuntimeError::InvalidInput(error.to_string()))??;
-        self.provider_kind = candidate.provider;
-        self.model = candidate.model_id.clone();
+        self.provider_kind = kind;
+        self.model = model;
         self.http = http;
         self.tools = tools;
         self.orchestrator = orchestrator;
