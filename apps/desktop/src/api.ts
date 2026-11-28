@@ -13,6 +13,7 @@ import type {
   JsonValue,
   Message,
   PermissionRow,
+  ProviderCheck,
   SettingsSnapshot,
   TurnEvent,
   VoiceStatus,
@@ -248,4 +249,9 @@ export function releaseTalk(): Promise<VoiceStatus> {
 /** Muting always succeeds and turns the microphone off at once. */
 export function setVoiceMuted(muted: boolean): Promise<VoiceStatus> {
   return invoke<VoiceStatus>("set_voice_muted", { muted });
+}
+
+/** Is Ollama reachable, which local models are installed, and which one to preselect. */
+export function checkProvider(): Promise<ProviderCheck> {
+  return invoke<ProviderCheck>("check_provider");
 }

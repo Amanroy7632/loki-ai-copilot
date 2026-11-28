@@ -245,3 +245,18 @@ voice; a stop never unmutes.
 Desktop commands: `get_voice_status`, `watch_voice(on_status: Channel<VoiceStatus>)`,
 `press_talk`, `release_talk`, `set_voice_muted(muted)`. The tray's Mute item and tooltip follow
 the same status stream.
+
+## Provider check (Settings)
+
+```text
+LocalModel { id, size_bytes, reviewed, display_name?, license? }
+ProviderCheck { reachable, detail?, models: LocalModel[], hidden_cloud_models, suggested? }
+```
+
+`Runtime::check_provider()` asks the configured **loopback** Ollama for its installed models
+(network policy unchanged; nothing is downloaded). Cloud models are never listed, only counted.
+Order: models recommended for this machine (verified, fit RAM and disk), then other reviewed
+models, then unreviewed ones by name. `suggested` is the saved model if installed, else the first
+in that order. Unreachable: `reachable = false` with how to start Ollama. Desktop command:
+`check_provider`. Settings preselects `suggested` into the form only; nothing is saved until the
+user presses Save.

@@ -37,8 +37,8 @@ pub use ids::{ApprovalId, ConversationId, MessageId, RequestId, SessionId, TaskI
 pub use message::{Conversation, Message, Role};
 pub use network::NetworkMode;
 pub use settings::{
-    AuditEntry, DataControlError, DataExport, DesktopSettings, ExportConversation,
-    SettingsProvider, SettingsSnapshot,
+    AuditEntry, DataControlError, DataExport, DesktopSettings, ExportConversation, LocalModel,
+    ProviderCheck, SettingsProvider, SettingsSnapshot,
 };
 pub use task::TaskState;
 pub use time::UnixMillis;

@@ -54,6 +54,7 @@ fn main() {
             settings::clear_history,
             settings::list_audit,
             settings::export_data,
+            settings::check_provider,
             lifecycle::get_autostart,
             lifecycle::set_autostart,
             voice::get_voice_status,

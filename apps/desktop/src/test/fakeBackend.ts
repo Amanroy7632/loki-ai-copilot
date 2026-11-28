@@ -13,6 +13,7 @@ import type {
   JsonValue,
   Message,
   PermissionRow,
+  ProviderCheck,
   Risk,
   SettingsSnapshot,
   TurnEvent,
@@ -43,6 +44,8 @@ export interface FakeBackendOptions {
   roots?: AllowedRootInfo[];
   /** What the "native folder picker" returns; `null` = the user cancelled. */
   pickFolder?: string | null;
+  /** What `check_provider` reports (default: Ollama not reachable). */
+  providerCheck?: ProviderCheck;
 }
 
 export interface FakeBackend {
@@ -283,6 +286,16 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
         }
         return structuredClone(backend.voice);
       }
+      case "check_provider":
+        return structuredClone(
+          options.providerCheck ?? {
+            reachable: false,
+            detail: "Can't reach Ollama at http://127.0.0.1:11434.",
+            models: [],
+            hidden_cloud_models: 0,
+            suggested: null,
+          },
+        );
       case "get_autostart":
         return structuredClone(backend.autostart);
       case "set_autostart": {

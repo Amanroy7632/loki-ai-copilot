@@ -3,12 +3,15 @@ import type {
   AutostartStatus,
   CapabilityStatus,
   DesktopSettings,
+  LocalModel,
+  ProviderCheck,
   SettingsSnapshot,
 } from "@loki/contracts";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   DataControlFailure,
+  checkProvider,
   clearHistory,
   exportData,
   getAutostart,
@@ -122,17 +125,17 @@ export function SettingsView({ onChanged }: { onChanged: () => void }) {
                   <option value="mock">Mock provider (demo replies)</option>
                 </select>
               </label>
-              <label>
-                Local model tag
-                <input
-                  value={draft.model_id ?? ""}
-                  maxLength={200}
-                  required={draft.provider === "ollama"}
-                  placeholder="qwen3:4b"
-                  onChange={(event) => setDraft({ ...draft, model_id: event.target.value || null })}
+              {draft.provider === "ollama" ? (
+                <ModelPicker
+                  value={draft.model_id}
+                  onPick={(model_id) => setDraft((current) => (current ? { ...current, model_id } : current))}
                 />
-              </label>
-              <p>Choose a model already installed in Ollama. Saving does not download a model.</p>
+              ) : (
+                <p>
+                  The mock provider gives canned, clearly labelled replies. It's for trying the app without a
+                  model.
+                </p>
+              )}
               <label>
                 Network mode
                 <select
@@ -343,5 +346,151 @@ function AutostartToggle() {
         </p>
       )}
     </>
+  );
+}
+
+function formatSize(bytes: number): string {
+  if (bytes <= 0) return "";
+  const gb = bytes / 1e9;
+  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
+}
+
+function modelLabel(model: LocalModel): string {
+  const parts = [
+    model.display_name,
+    formatSize(model.size_bytes),
+    model.reviewed ? "reviewed" : "not reviewed by Loki",
+  ];
+  return `${model.id} — ${parts.filter(Boolean).join(" · ")}`;
+}
+
+/**
+ * Checks the local Ollama and lists the models actually installed (cloud models are never
+ * offered). If no model is chosen yet, or the chosen one isn't installed, it preselects the one
+ * Loki suggests; nothing changes until the user saves. Falls back to typing a tag when Ollama
+ * can't be reached.
+ */
+function ModelPicker({ value, onPick }: { value: string | null; onPick: (id: string | null) => void }) {
+  const [check, setCheck] = useState<ProviderCheck | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [picked, setPicked] = useState<string | null>(null);
+  // The saved model that wasn't installed and was replaced by the suggestion.
+  const [replaced, setReplaced] = useState<string | null>(null);
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
+  const onPickRef = useRef(onPick);
+  useEffect(() => {
+    onPickRef.current = onPick;
+  }, [onPick]);
+
+  // Starts a check; state is only set from its callbacks.
+  const load = useCallback(() => {
+    checkProvider().then(
+      (result) => {
+        setCheck(result);
+        setChecking(false);
+        const current = valueRef.current;
+        const installed = result.models.some((model) => model.id === current);
+        if (result.suggested && (current === null || !installed) && result.suggested !== current) {
+          onPickRef.current(result.suggested);
+          setPicked(result.suggested);
+          setReplaced(current);
+        }
+      },
+      (failure: unknown) => {
+        setCheck({
+          reachable: false,
+          detail: String(failure),
+          models: [],
+          hidden_cloud_models: 0,
+          suggested: null,
+        });
+        setChecking(false);
+      },
+    );
+  }, []);
+
+  // Check once when the picker appears (the provider was switched to Ollama).
+  useEffect(load, [load]);
+
+  const run = () => {
+    setChecking(true);
+    setPicked(null);
+    load();
+  };
+
+  const models = check?.models ?? [];
+  const listed = check?.reachable === true && models.length > 0;
+  const missing = value !== null && listed && !models.some((model) => model.id === value);
+
+  return (
+    <div className="model-picker">
+      <div className="provider-check" aria-live="polite">
+        <span
+          className={`provider-dot ${checking ? "checking" : check?.reachable ? "up" : "down"}`}
+          aria-hidden="true"
+        />
+        <span>
+          {checking
+            ? "Checking Ollama…"
+            : check?.reachable
+              ? `Ollama is running · ${models.length} local model${models.length === 1 ? "" : "s"} installed`
+              : "Ollama isn't reachable"}
+        </span>
+        <button type="button" className="ghost small" onClick={run} disabled={checking}>
+          Check again
+        </button>
+      </div>
+      {!checking && check?.detail && <p className="provider-detail">{check.detail}</p>}
+      {!checking && check && check.hidden_cloud_models > 0 && (
+        <p className="provider-detail">
+          {check.hidden_cloud_models} cloud model{check.hidden_cloud_models === 1 ? " is" : "s are"} hidden:
+          Loki only runs models on this computer.
+        </p>
+      )}
+      {listed ? (
+        <label>
+          Local model
+          <select value={value ?? ""} onChange={(event) => onPick(event.target.value || null)} required>
+            {value === null && <option value="">Choose a model…</option>}
+            {missing && <option value={value}>{value} — not installed</option>}
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {modelLabel(model)}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <label>
+          Local model tag
+          <input
+            value={value ?? ""}
+            maxLength={200}
+            required
+            placeholder="bonsai-2:4b"
+            onChange={(event) => onPick(event.target.value || null)}
+          />
+        </label>
+      )}
+      {picked && picked === value && (
+        <p className="provider-detail picked">
+          {replaced ? (
+            <>
+              <strong>{replaced}</strong> isn't installed, so <strong>{picked}</strong> was selected instead.
+              Save settings to use it.
+            </>
+          ) : (
+            <>
+              Found <strong>{picked}</strong> installed and selected it. Save settings to use it.
+            </>
+          )}
+        </p>
+      )}
+      <p>Only models already installed in Ollama are listed. Saving never downloads anything.</p>
+    </div>
   );
 }

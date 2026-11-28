@@ -24,6 +24,7 @@ fn main() {
             "clear_history",
             "list_audit",
             "export_data",
+            "check_provider",
             "get_autostart",
             "set_autostart",
             "get_voice_status",

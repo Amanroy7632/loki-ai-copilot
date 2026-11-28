@@ -24,6 +24,7 @@
     "allow-clear-history",
     "allow-list-audit",
     "allow-export-data",
+    "allow-check-provider",
     "allow-get-autostart",
     "allow-set-autostart",
     "allow-get-voice-status",
