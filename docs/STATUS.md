@@ -9,7 +9,7 @@
 | | |
 | --- | --- |
 | **Current phase** | P4: Voice ([phase file](phases/P04-voice.md)). Owner authorized parallel P4 development and then integration of P4-T01 into the main checkout after P3 implementation (2026-11-27). Earlier phase gates remain open. |
-| **Next ticket** | **P4-T02 Audio capture**. P3 is code complete (238 tests and native smoke test recorded) but still needs SEC tests passing in CI. Open owner items: the P2 offline test, D-05, D-07. |
+| **Next ticket** | **P5-T02 Runtime API and event streaming** (owner: fix P4-T03, then P5; P4-T04..T09 still open in parallel). P3 is code complete (238 tests and native smoke test recorded) but still needs SEC tests passing in CI. Open owner items: the P2 offline test, D-05, D-07. |
 | **Last gate passed** | none |
 | **Reference OS** | **macOS** (Apple Silicon first), ADR-0003 |
 
@@ -21,7 +21,7 @@
 | P1 Foundation | code complete; **all checks pass locally on macOS**; CI not yet run anywhere. Gate not passed. |
 | P2 Local chat | code complete; all checks pass locally (161 tests); manual chat against real Ollama recorded. Gate not passed (see Next ticket). |
 | P3 Tools and policy | code complete; all checks pass locally (238 tests); native macOS smoke test passed (real model, approved app launch). Gate not passed: SEC tests not yet run in CI. |
-| P4 Voice | P4-T01 state machine implemented and copied from isolated branch into main; combined checks pass (244 tests). Gate not passed. |
+| P4 Voice | P4-T01/T02 implemented: state machine and explicit microphone capture; combined checks pass (259 tests), native macOS capture recorded. Gate not passed. |
 | P5–P11 | not started |
 
 ## P0 tickets
@@ -80,12 +80,22 @@ P3 gate: [x] an allowed tool works end to end from the CLI; [x] denied, malforme
   failure, silence and speaking sequences. Review fix (2026-11-27): mute now keeps the cleanup
   barrier (`Muted { cleanup_pending }`) and a `Failed` event covers STT, agent and TTS errors.
   Ten voice tests. Source commit `7861b7b`; see `docs/handoffs/p4-t01.md`.
-- [ ] P4-T02 Audio capture: CPAL, bounded buffering, mono conversion and resampling; synthetic
-  tests and manual reference-OS capture required.
-- [ ] P4-T03..T09: not started. No capture, STT, TTS or CLI voice integration yet.
+- [x] P4-T02 Audio capture: CPAL default input, bounded oldest-frame replacement with counting,
+  mono conversion, continuous Rubato resampling to 16 kHz, typed errors and owning stream guard.
+  11 new tests; manual capture recorded in `docs/benchmarks/p4-capture.md` (0 dropped frames).
+- [x] P4-T03 VAD and silence timeout: earshot 1.2.2 behind `SpeechDetector` (ADR-0013); 16 ms frames over
+  any chunking; 1.2 s silence timeout, 30 s cap, 400 ms speech confirmation (measured: earshot's
+  noise-onset transient reaches 352 ms). Synthetic vowels and noise generated in Rust at test time
+  (bit-identical to the earlier WAV/Python fixtures, which were git-ignored and are removed).
+- [ ] P4-T04..T09: not started. No STT, TTS or CLI voice integration yet.
 
 The owner explicitly authorized starting P4 before earlier gates passed, overriding the normal
 phase-order rule. P3 implementation and its recorded validation remain intact.
+
+## P5 tickets
+
+- [x] P5-T01 Scaffold: `apps/desktop` (Tauri 2.12.5, React 19.3.1, TS strict, Vite 8.3.8) and `packages/ui`; ESLint 10 + Prettier + Vitest 5; JS job in CI; Linux WebKitGTK build deps in CI. `pnpm --filter desktop tauri dev` runs (app stays up, Vite serves, runtime opened). Least-privilege ACL from the start: one app command (`app_status`), one capability, no core plugins; strict CSP. *CI not yet run.*
+- [ ] P5-T02..T10: not started.
 
 ## Open decisions
 
@@ -94,10 +104,11 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 | ~~D-01~~ | ~~Reference OS~~ | | **Decided:** macOS, ADR-0003 |
 | ~~D-02~~ | ~~How TS contracts are generated~~ | | **Decided:** ts-rs, ADR-0005 |
 | ~~D-03~~ | ~~Migration library~~ | | **Decided:** hand-rolled `user_version` runner, ADR-0007 |
-| D-04 | VAD engine and wake-word engine (licenses matter) | P4-T03 / P4-T08 | |
+| D-04 | ~~VAD engine~~ **decided: earshot, ADR-0013**; wake-word engine still open | P4-T08 | Re-evaluate VAD on real recordings in P4-T09 |
 | D-05 | Project license | before any public release | No `license` field set yet |
 | D-06 | Web search provider (self-hosted SearXNG, an API with a key, ...) | P7-T01 | The key is kept in the OS secret store |
-| D-07 | **Accept MPL-2.0 `option-ext`** (pulled in by `directories`) **and MIT-0 `borrow-or-share`** (pulled in by `jsonschema`)? | before any release | Allowed by a crate-scoped exception in `deny.toml` for now. If rejected: replace `directories` (hand-rolled paths, or Tauri path APIs from P5) and delete the exception. See `docs/p0/licenses.md` |
+| D-07 | **Accept MPL-2.0 `option-ext`** (pulled in by `directories`), **Tauri's MPL-2.0 Servo crates** (`cssparser`, `cssparser-macros`, `selectors`, `dtoa-short`) **and MIT-0 `borrow-or-share`** (pulled in by `jsonschema`)? | before any release | Allowed by a crate-scoped exception in `deny.toml` for now. If rejected: replace `directories` (hand-rolled paths, or Tauri path APIs from P5) and delete the exception. See `docs/p0/licenses.md` |
+| D-08 | **App identifier** (bundle ID, e.g. `com.<owner>.loki`): `tauri.conf.json` uses the placeholder `dev.loki.placeholder` | before the first installer (P5 gate) | ADR-0002 deferred it to P11; the P5 gate needs an installer. Loki's data dir comes from `directories`, not this ID, so changing it later doesn't move user data |
 
 ## Blockers
 
@@ -109,6 +120,10 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 ## Progress log
 
 Newest first. Format: `YYYY-MM-DD | ticket | what changed | commands run → result`.
+
+- 2026-11-28 | P5-T01 | Desktop scaffold (Tauri 2 stable; 3.x is alpha), `packages/ui` (StatusPill), root ESLint/Prettier, `AppStatus` contract type, `Runtime::open_for_app` (labelled mock fallback before onboarding) and `Runtime::status`. Fixed: `open` now rejects a missing model before installing the global logger (the first `tauri dev` run panicked on a second logger init). New D-07 crates (Tauri's MPL-2.0 Servo deps) and D-08 (app identifier placeholder). All versions at least two weeks old. | `./scripts/check.sh` → all passed (273 Rust + 7 JS tests, eslint, prettier, tsc, cargo deny). `tauri dev` with a throwaway data dir: app ran 18 s, Vite HTTP 200, log `runtime opened provider="mock"`, no errors.
+- 2026-11-28 | P4-T03 | Finished the in-progress VAD. Found: (1) its `.wav` fixtures were git-ignored (`*.wav`), so CI could not compile the tests; (2) they came from a Python script; (3) the noise test failed even with those fixtures, because earshot scores noise onsets above 0.5 for up to 352 ms, longer than the 80 ms confirmation. Ported the generator to Rust (0 differing samples vs the WAVs), removed the WAVs and script, raised the default confirmation to 400 ms, added continuous-noise-bed tests, wrote the missing ADR-0013. Reviewed P4-T02 (`c040e5e`): correct; standalone fmt/clippy/259 tests/cargo deny pass. | `cargo test -p loki-voice` → 33 passed (VAD 12); measurements in ADR-0013.
+- 2026-11-27 | P4-T02 | Explicit capture, synthetic-source trait/tests, bounded queue and 16 kHz mono FFT conversion; ADR-0012, exact-pinned reviewed dependencies, Linux ALSA CI prerequisite. Native probe: 143872 frames at 48 kHz → 47958 at 16 kHz, no drops, no audio saved. First native attempt returned Backend; retry succeeded. | Voice tests: 21 passed; clippy passed. Initial full run hit stale Claude scratch-path test artifacts; fresh `CARGO_TARGET_DIR=/private/tmp/loki-p4-verified-target ./scripts/check.sh` → all passed, 259 tests, contracts/tsc/cargo deny passed. See `docs/handoffs/p4-t02.md`.
 
 - 2026-11-27 | P4-T01 review | Reviewed the P4-T01 state machine. Fixed: muting during active work skipped the cancel path's cleanup barrier, so after Unmute a new session (second mic stream) could start before the old work was released. Now `Muted { cleanup_pending: true }`; `CleanupComplete` clears it; Unmute while pending goes to `Cancelled`. Added `Failed` (Transcribing/Thinking/Speaking → Idle) so errors aren't reported as user cancels. Not changed: text-only replies still pass through Speaking (decide in P4-T06); no serde on VoiceState yet (needed in P5). | `cargo test -p loki-voice` → 10 passed; clippy clean; full `./scripts/check.sh` → all passed, 248 tests.
 - 2026-11-27 | P4-T01 integration | Copied the isolated voice state machine from `7861b7b` into main on owner request; reconciled status with completed P3. File-hash comparison confirmed P3 implementation unchanged; existing staging state preserved. | `./scripts/check.sh` outside sandbox → all passed, 244 tests, fmt/clippy, generated contracts, strict TypeScript and cargo deny. P4-T02 is next; no audio capture or CLI voice wiring yet.

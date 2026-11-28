@@ -145,7 +145,7 @@ async fn pull(runtime: &Runtime, id: &str, accept_license: bool) -> anyhow::Resu
     loop {
         let next = tokio::select! {
             next = progress.next() => next,
-            _ = tokio::signal::ctrl_c() => {
+            _ = crate::signals::ctrl_c() => {
                 cancel.cancel();
                 continue;
             }

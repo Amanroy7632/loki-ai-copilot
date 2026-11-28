@@ -17,10 +17,13 @@ echo "==> contracts (generated TS is current)"
 ./scripts/gen-contracts.sh --check
 
 if [ -d node_modules ]; then
-  echo "==> contracts (tsc --strict)"
-  pnpm --filter @loki/contracts typecheck
+  echo "==> js: tsc --strict, eslint, prettier, vitest"
+  pnpm typecheck
+  pnpm lint
+  pnpm format:check
+  pnpm test
 else
-  echo "==> skipping tsc: run 'pnpm install' first"
+  echo "==> skipping JS checks: run 'pnpm install' first"
 fi
 
 if command -v cargo-deny >/dev/null 2>&1; then
@@ -28,12 +31,6 @@ if command -v cargo-deny >/dev/null 2>&1; then
   cargo deny check
 else
   echo "==> skipping cargo deny: install it with 'cargo install cargo-deny --locked'"
-fi
-
-if [ -d apps/desktop ] && [ -f apps/desktop/package.json ]; then
-  echo "==> pnpm lint + test"
-  pnpm -r --if-present lint
-  pnpm -r --if-present test
 fi
 
 echo "All checks passed."

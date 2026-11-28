@@ -54,17 +54,49 @@ listening. Transcribed text is user input, never a source of control events or a
 The transition table is tested across all 9 states × 13 events (both muted variants), with
 sequence tests for push-to-talk, silence, cancellation, device loss, mute with and without pending
 cleanup, failures, and capture exclusion during speech.
-Hardware capture, STT, TTS and SEC-11 integration remain later P4 tickets.
+Capture is implemented below; STT, TTS and SEC-11 integration remain later P4 tickets.
 
 ## Audio pipeline
 
 1. Capture mono PCM (CPAL on desktop; AVAudioEngine or AudioRecord via native bridges on mobile).
 2. Send frames over a bounded channel. If it overflows, drop the oldest frames and count them.
 3. Resample to the STT input format: 16 kHz mono f32 for whisper.
-4. Run voice activity detection with a silence timeout (the VAD engine is chosen by ADR in P4-T03).
+4. Run voice activity detection with a silence timeout: earshot behind `SpeechDetector`, 16 ms frames, 400 ms speech confirmation, 1.2 s silence timeout, 30 s cap (ADR-0013).
 5. Run speech-to-text with whisper.cpp bindings, on a blocking thread.
 6. Text goes to the agent. The answer is spoken with the native TTS adapter.
 7. **No raw audio is kept** unless the user turns on an explicit debug setting.
+
+### Capture implementation (P4-T02)
+
+`loki_voice::capture` provides `AudioSource`, `CpalSource`, `CaptureSession`, `CaptureConfig`,
+and typed `CaptureError`s. `CpalSource::default_input()` discovers the default input and native
+format. Only `CaptureSession::start(source, config)` starts capture. The caller must display a
+microphone indicator and own the session on a blocking worker. It must never start while muted
+or speaking; state-machine/runtime integration is still P4-T06/T07.
+
+The callback downmixes interleaved PCM into a preallocated bounded queue; its default capacity
+is 250 ms of native mono frames. Overflow replaces the oldest frame and increments
+`dropped_frames`. `read()` drains a bounded amount and returns available 16 kHz mono f32 samples;
+it can legitimately return empty while a converter chunk is incomplete. FFT resampling uses
+continuous state, removes startup delay and flushes partial tails. `finish()` first releases the
+stream and then returns the remaining samples and final stats. Drop cancels and discards pending
+audio. No raw audio is written to disk, logged or sent over the network. Future VAD/STT code must
+bound utterance accumulation independently of this callback queue.
+
+Permission denial, device loss, unsupported formats and invalid frames are typed errors; a
+backend error during capture stops the stream when read. The first failure is latched. Native
+rates 8, 16, 22.05, 24, 32, 44.1, 48, 88.2, 96, 176.4 and 192 kHz and 1–32 channels are accepted.
+Other rates are reported unsupported. Linux builds require `libasound2-dev` and `pkg-config`.
+
+Manual capture (1–10 seconds, aggregate counts and levels only):
+
+```sh
+cargo run -p loki-voice --example capture_probe --locked -- 3
+# Read-only device configuration diagnostic, without a recording stream:
+cargo run -p loki-voice --example capture_probe --locked -- --check-device
+```
+
+See ADR-0012 and `docs/benchmarks/p4-capture.md` for decisions and native validation evidence.
 
 ## Model onboarding (P2-T05)
 

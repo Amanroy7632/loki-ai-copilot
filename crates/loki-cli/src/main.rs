@@ -10,6 +10,7 @@
 mod admin;
 mod models;
 mod repl;
+mod signals;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -47,6 +48,11 @@ struct Cli {
     /// (`{"scripts": [{"steps": [...]}, ...]}`) instead of echoing.
     #[arg(long, global = true, value_name = "FILE", hide = true)]
     mock_script: Option<PathBuf>,
+
+    /// Testing only: use the scripted `MockPlatform` (fake apps, nothing is ever launched)
+    /// instead of this OS's adapter, so tool and approval flows can be tested on every OS.
+    #[arg(long, global = true, hide = true)]
+    mock_platform: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -146,7 +152,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     // Opening is blocking (files, SQLite), so it happens before the async runtime starts.
     let mut runtime = Runtime::open(RuntimeOptions {
         mock_scripts,
-        platform: None,
+        platform: cli
+            .mock_platform
+            .then(|| std::sync::Arc::new(loki_runtime::MockPlatform::default()) as _),
         data_dir: cli.data_dir,
         provider,
         model: cli.model,

@@ -1,5 +1,5 @@
 # packages/ui
 
-This package will hold shared React components for the desktop and mobile UIs. It is created in P5-T01.
+Shared React components for the desktop and mobile UIs (created in P5-T01). Run `pnpm --filter @loki/ui test`.
 
 Components show capability status from the runtime, never assume a feature exists, and contain no business logic.

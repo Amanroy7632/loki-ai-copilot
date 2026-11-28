@@ -14,6 +14,7 @@
 //!
 //! See `docs/CONTRACTS.md` for how these types are used end to end.
 
+pub mod api;
 pub mod capability;
 pub mod decision;
 pub mod grant;
@@ -24,6 +25,7 @@ pub mod task;
 pub mod time;
 pub mod tool;
 
+pub use api::AppStatus;
 pub use capability::{Capability, CapabilityStatus};
 pub use decision::Decision;
 pub use grant::{ANY_SCOPE, Grant};

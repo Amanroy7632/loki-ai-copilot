@@ -1,0 +1,18 @@
+# Only JS/TS/CSS/HTML/JSON source is formatted by Prettier. Rust uses rustfmt; docs are hand-written.
+*.md
+*.rs
+*.toml
+*.sql
+pnpm-lock.yaml
+Cargo.lock
+**/dist/
+**/target/
+**/node_modules/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/icons/
+packages/contracts/src/generated/
+spikes/
+fixtures/
+docs/
+*.yml
+*.yaml

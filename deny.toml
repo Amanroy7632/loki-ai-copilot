@@ -36,6 +36,12 @@ exceptions = [
   # MIT without the attribution clause, so more permissive than MIT. PENDING OWNER CONFIRMATION:
   # decision D-07 in docs/STATUS.md.
   { allow = ["MIT-0"], crate = "borrow-or-share" },
+  # Pulled in by Tauri 2 (tauri-utils -> HTML/CSS handling from Servo). Every Tauri app has these;
+  # MPL-2.0 like option-ext. PENDING OWNER APPROVAL: D-07. Rejecting them means not using Tauri.
+  { allow = ["MPL-2.0"], crate = "cssparser" },
+  { allow = ["MPL-2.0"], crate = "cssparser-macros" },
+  { allow = ["MPL-2.0"], crate = "selectors" },
+  { allow = ["MPL-2.0"], crate = "dtoa-short" },
 ]
 
 [licenses.private]

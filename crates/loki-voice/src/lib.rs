@@ -2,8 +2,9 @@
 //!
 //! Audio pipeline: capture, resampling, VAD, speech-to-text, TTS and the voice state machine.
 //!
-//! **Status:** P4-T01 implements the pure state machine. Capture, recognition, speech output
-//! and runtime integration remain for P4-T02..T09; this crate does not open a microphone.
+//! **Status:** P4-T01 implements the pure state machine; P4-T02 adds explicit CPAL capture and
+//! 16 kHz mono conversion. Recognition, speech output and runtime integration remain later
+//! tickets. Capture starts only through `CaptureSession::start`, never on initialization.
 //!
 //! ## Responsibilities
 //!
@@ -25,5 +26,8 @@
 //! `loki-core`. Adding another edge needs an ADR (see `docs/ARCHITECTURE.md`).
 
 mod state;
+
+pub mod capture;
+pub mod vad;
 
 pub use state::{InvalidTransition, VoiceEvent, VoiceMachine, VoiceState};
