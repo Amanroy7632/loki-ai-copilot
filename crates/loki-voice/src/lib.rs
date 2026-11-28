@@ -28,5 +28,6 @@
 mod state;
 
 pub mod capture;
+pub mod vad;
 
 pub use state::{InvalidTransition, VoiceEvent, VoiceMachine, VoiceState};

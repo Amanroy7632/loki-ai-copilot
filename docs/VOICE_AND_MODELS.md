@@ -61,7 +61,7 @@ Capture is implemented below; STT, TTS and SEC-11 integration remain later P4 ti
 1. Capture mono PCM (CPAL on desktop; AVAudioEngine or AudioRecord via native bridges on mobile).
 2. Send frames over a bounded channel. If it overflows, drop the oldest frames and count them.
 3. Resample to the STT input format: 16 kHz mono f32 for whisper.
-4. Run voice activity detection with a silence timeout (the VAD engine is chosen by ADR in P4-T03).
+4. Run voice activity detection with a silence timeout: earshot behind `SpeechDetector`, 16 ms frames, 400 ms speech confirmation, 1.2 s silence timeout, 30 s cap (ADR-0013).
 5. Run speech-to-text with whisper.cpp bindings, on a blocking thread.
 6. Text goes to the agent. The answer is spoken with the native TTS adapter.
 7. **No raw audio is kept** unless the user turns on an explicit debug setting.

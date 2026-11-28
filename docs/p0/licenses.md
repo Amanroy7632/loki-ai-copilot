@@ -22,6 +22,8 @@
 
 P3 additions (2026-11-27): jsonschema 0.63 (MIT), sha2 0.11 (MIT/Apache-2.0), jiff 1.0 (MIT/Unlicense), plist 1.10 (MIT), wiremock 0.6 (dev only, MIT/Apache-2.0).
 
+P4 additions (2026-11-27/28): cpal 0.18.2 (Apache-2.0), rubato 5.1.0 and crossbeam-queue 0.3.14 (MIT OR Apache-2.0), earshot 1.2.2 (MIT OR Apache-2.0 per its Cargo.toml; the VAD weights are embedded in the crate source, but there is no separate license file and the README does not state the weights' training-data provenance: **confirm with upstream before a public release**, as part of P0-T07).
+
 TypeScript (devDependency only, not shipped): typescript 6.0.3, Apache-2.0.
 
 ## P4 audio capture dependencies (2026-11-27)

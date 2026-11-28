@@ -69,6 +69,8 @@ plist = "1.10"
 cpal = "=0.18.2"
 rubato = "=5.1.0"
 crossbeam-queue = "=0.3.14"
+# P4-T03: local VAD, MIT OR Apache-2.0; verified 2026-11-27 (ADR-0013).
+earshot = "=1.2.2"
 
 [workspace.lints.rust]
 unsafe_code = "deny"          # FFI modules opt out locally, with a `// SAFETY:` comment per block
