@@ -9,7 +9,7 @@
 | | |
 | --- | --- |
 | **Current phase** | P4: Voice ([phase file](phases/P04-voice.md)). Owner authorized parallel P4 development and then integration of P4-T01 into the main checkout after P3 implementation (2026-11-27). Earlier phase gates remain open. |
-| **Next ticket** | **P5-T03 Chat UI** (owner: fix P4-T03, then P5; P4-T04..T09 still open in parallel). P3 is code complete (238 tests and native smoke test recorded) but still needs SEC tests passing in CI. Open owner items: the P2 offline test, D-05, D-07. |
+| **Next ticket** | **P5-T04 Approval dialog** (owner: fix P4-T03, then P5; P4-T04..T09 still open in parallel). P3 is code complete (238 tests and native smoke test recorded) but still needs SEC tests passing in CI. Open owner items: the P2 offline test, D-05, D-07. |
 | **Last gate passed** | none |
 | **Reference OS** | **macOS** (Apple Silicon first), ADR-0003 |
 
@@ -96,7 +96,8 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 
 - [x] P5-T01 Scaffold: `apps/desktop` (Tauri 2.12.5, React 19.3.1, TS strict, Vite 8.3.8) and `packages/ui`; ESLint 10 + Prettier + Vitest 5; JS job in CI; Linux WebKitGTK build deps in CI. `pnpm --filter desktop tauri dev` runs (app stays up, Vite serves, runtime opened). Least-privilege ACL from the start: one app command (`app_status`), one capability, no core plugins; strict CSP. *CI not yet run.*
 - [x] P5-T02 Runtime API and event streaming: `TurnEvent` contract over one Tauri Channel per turn; runtime `chat_turn` / `stop_turn` / `respond_approval` (approval broker: single-use answers, waits at most until expiry); 7 thin commands, each in the app manifest and the capability. Acceptance: Vitest test receives the mock provider's streamed reply through a real `Channel`; Rust tests drive `chat_turn` with MockProvider (event order, approve/reject, stop).
-- [ ] P5-T03..T10: not started.
+- [x] P5-T03 Chat UI: streaming messages (aria-busy while streaming, `log` region), Stop (button or Escape), Retry, conversation list with New, select, rename (Enter/Escape, focus restored) and delete (inline confirm, focus on Cancel), Up/Down navigation, visible focus. 20 Vitest component tests on a fake backend that streams through real Channels. Runtime + commands for rename/delete. *Interactive manual run pending the owner* (`docs/checklists/p5-chat-manual.md`); the agent verified the app starts.
+- [ ] P5-T04..T10: not started.
 
 ## Open decisions
 
@@ -122,6 +123,7 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 
 Newest first. Format: `YYYY-MM-DD | ticket | what changed | commands run → result`.
 
+- 2026-11-28 | P5-T03 | Chat UI (ConversationList, MessageList, Composer, ChatView), `streamTurn` (waits for both the command result and the terminal event, since Tauri doesn't order them), runtime `rename_conversation` / `delete_conversation` + commands. | `./scripts/check.sh` → all passed (282 Rust + 23 JS tests). `tauri dev` starts, Vite 200. Interactive run not done (no way to operate the window from the agent).
 - 2026-11-28 | P5-T02 | Streaming runtime API and desktop commands (see CONTRACTS.md). Verified in Tauri 2.12 source: with an app ACL manifest every custom command is ACL-checked, and the channel data-fetch command is exempt, so streaming needs no extra permission. | `./scripts/check.sh` → all passed (280 Rust + 11 JS tests). `tauri dev` starts with all 7 permissions generated.
 - 2026-11-28 | P5-T01 | Desktop scaffold (Tauri 2 stable; 3.x is alpha), `packages/ui` (StatusPill), root ESLint/Prettier, `AppStatus` contract type, `Runtime::open_for_app` (labelled mock fallback before onboarding) and `Runtime::status`. Fixed: `open` now rejects a missing model before installing the global logger (the first `tauri dev` run panicked on a second logger init). New D-07 crates (Tauri's MPL-2.0 Servo deps) and D-08 (app identifier placeholder). All versions at least two weeks old. | `./scripts/check.sh` → all passed (273 Rust + 7 JS tests, eslint, prettier, tsc, cargo deny). `tauri dev` with a throwaway data dir: app ran 18 s, Vite HTTP 200, log `runtime opened provider="mock"`, no errors.
 - 2026-11-28 | P4-T03 | Finished the in-progress VAD. Found: (1) its `.wav` fixtures were git-ignored (`*.wav`), so CI could not compile the tests; (2) they came from a Python script; (3) the noise test failed even with those fixtures, because earshot scores noise onsets above 0.5 for up to 352 ms, longer than the 80 ms confirmation. Ported the generator to Rust (0 differing samples vs the WAVs), removed the WAVs and script, raised the default confirmation to 400 ms, added continuous-noise-bed tests, wrote the missing ADR-0013. Reviewed P4-T02 (`c040e5e`): correct; standalone fmt/clippy/259 tests/cargo deny pass. | `cargo test -p loki-voice` → 33 passed (VAD 12); measurements in ADR-0013.

@@ -52,3 +52,54 @@ export function stopReply(turnId: string): Promise<boolean> {
 export function respondApproval(approvalId: string, approved: boolean): Promise<boolean> {
   return invoke<boolean>("respond_approval", { approvalId, approved });
 }
+
+export function renameConversation(conversationId: ConversationId, title: string): Promise<Conversation> {
+  return invoke<Conversation>("rename_conversation", { conversationId, title });
+}
+
+export async function deleteConversation(conversationId: ConversationId): Promise<void> {
+  await invoke("delete_conversation", { conversationId });
+}
+
+function isTerminal(event: TurnEvent): boolean {
+  return event.type === "completed" || event.type === "stopped" || event.type === "failed";
+}
+
+/**
+ * Runs a streaming command and resolves once **both** the command has returned and the turn's
+ * terminal event has arrived. Tauri orders channel messages among themselves, but not relative
+ * to the command's own response, so waiting for just one of them could drop the last events.
+ * If the command fails without a terminal event (e.g. invalid input), the promise rejects.
+ */
+export function streamTurn(
+  start: (onEvent: (event: TurnEvent) => void) => Promise<void>,
+  onEvent: (event: TurnEvent) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let terminal = false;
+    let returned = false;
+    const finishIfDone = () => {
+      if (terminal && returned) resolve();
+    };
+    start((event) => {
+      onEvent(event);
+      if (isTerminal(event)) {
+        terminal = true;
+        finishIfDone();
+      }
+    }).then(
+      () => {
+        returned = true;
+        finishIfDone();
+      },
+      (error: unknown) => {
+        if (terminal) {
+          returned = true;
+          finishIfDone();
+        } else {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      },
+    );
+  });
+}

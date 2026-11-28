@@ -370,6 +370,41 @@ impl Runtime {
         Ok(self.store.run(move |db| db.list_messages(&id)).await?)
     }
 
+    /// Renames a conversation. The title is trimmed, must not be empty, and is capped at
+    /// 200 characters (it is display text only and is never sent to tools).
+    pub async fn rename_conversation(
+        &self,
+        id: &ConversationId,
+        title: &str,
+    ) -> Result<Conversation, RuntimeError> {
+        let title: String = title.trim().chars().take(200).collect();
+        if title.is_empty() {
+            return Err(RuntimeError::InvalidInput(String::from(
+                "a title can't be empty",
+            )));
+        }
+        let lookup = id.clone();
+        self.store
+            .run(move |db| db.rename_conversation(&lookup, &title))
+            .await?
+            .ok_or_else(|| RuntimeError::ConversationNotFound(id.to_string()))
+    }
+
+    /// Deletes a conversation and all its messages. Audit rows (tool runs) are kept: they are a
+    /// separate record and contain no conversation text.
+    pub async fn delete_conversation(&self, id: &ConversationId) -> Result<(), RuntimeError> {
+        let lookup = id.clone();
+        let deleted = self
+            .store
+            .run(move |db| db.delete_conversation(&lookup))
+            .await?;
+        if deleted {
+            Ok(())
+        } else {
+            Err(RuntimeError::ConversationNotFound(id.to_string()))
+        }
+    }
+
     /// Creates a conversation titled after its first message.
     pub async fn start_conversation(
         &self,

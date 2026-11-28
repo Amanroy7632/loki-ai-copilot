@@ -126,3 +126,34 @@ pub async fn get_messages(
         .await
         .map_err(|error| error.to_string())
 }
+
+/// Renames a conversation; returns the updated row.
+#[tauri::command]
+pub async fn rename_conversation(
+    state: tauri::State<'_, AppState>,
+    conversation_id: ConversationId,
+    title: String,
+) -> Result<Conversation, String> {
+    state
+        .runtime
+        .read()
+        .await
+        .rename_conversation(&conversation_id, &title)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// Deletes a conversation and its messages (the UI confirms first).
+#[tauri::command]
+pub async fn delete_conversation(
+    state: tauri::State<'_, AppState>,
+    conversation_id: ConversationId,
+) -> Result<(), String> {
+    state
+        .runtime
+        .read()
+        .await
+        .delete_conversation(&conversation_id)
+        .await
+        .map_err(|error| error.to_string())
+}

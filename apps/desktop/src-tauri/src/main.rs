@@ -23,6 +23,8 @@ fn main() {
             commands::respond_approval,
             commands::list_conversations,
             commands::get_messages,
+            commands::rename_conversation,
+            commands::delete_conversation,
         ])
         .run(tauri::generate_context!());
     if let Err(error) = app {

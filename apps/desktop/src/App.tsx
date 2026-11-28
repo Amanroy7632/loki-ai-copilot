@@ -3,6 +3,7 @@ import { StatusPill } from "@loki/ui";
 import { useEffect, useState } from "react";
 
 import { appStatus } from "./api";
+import { ChatView } from "./chat/ChatView";
 
 type Load = { kind: "loading" } | { kind: "ready"; status: AppStatus } | { kind: "error"; message: string };
 
@@ -44,6 +45,7 @@ export function App() {
           Version {load.status.version} · Tools {load.status.tools_enabled ? "on" : "off"}
         </p>
       )}
+      {load.kind === "ready" && <ChatView />}
     </main>
   );
 }

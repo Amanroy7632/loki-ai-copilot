@@ -11,6 +11,8 @@ fn main() {
             "respond_approval",
             "list_conversations",
             "get_messages",
+            "rename_conversation",
+            "delete_conversation",
         ]));
     if let Err(error) = tauri_build::try_build(attributes) {
         panic!("tauri build configuration failed: {error:#}");

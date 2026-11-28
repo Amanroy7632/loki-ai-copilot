@@ -16,7 +16,7 @@ const base: AppStatus = {
 
 describe("App", () => {
   it("shows the provider and model from the runtime", async () => {
-    mockIPC((command) => (command === "app_status" ? base : undefined));
+    mockIPC((command) => (command === "app_status" ? base : []));
     render(<App />);
     expect(await screen.findByText("ollama · bonsai-2:4b")).toBeInTheDocument();
     expect(screen.getByText(/Tools on/)).toBeInTheDocument();
@@ -24,7 +24,7 @@ describe("App", () => {
 
   it("labels the mock provider honestly and shows the startup note", async () => {
     const mock: AppStatus = { ...base, provider: "mock", model: null, detail: "No model selected yet" };
-    mockIPC(() => mock);
+    mockIPC((command) => (command === "app_status" ? mock : []));
     render(<App />);
     expect(await screen.findByText("Mock provider (no model)")).toBeInTheDocument();
     expect(screen.getByText("No model selected yet")).toBeInTheDocument();

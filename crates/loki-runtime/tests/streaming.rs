@@ -218,3 +218,41 @@ async fn invalid_turn_requests_are_refused() {
     ));
     assert!(!rt.respond_approval("not-an-approval", true));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn conversations_can_be_renamed_and_deleted() {
+    let dir = tempfile::tempdir().unwrap();
+    let rt = runtime(&dir, None, Arc::new(MockPlatform::default()));
+    let (sink, events) = sink();
+    rt.chat_turn("t", None, Some(String::from("first")), sink)
+        .await
+        .unwrap();
+    let TurnEvent::Started { conversation } = events.lock().unwrap()[0].clone() else {
+        panic!()
+    };
+
+    let renamed = rt
+        .rename_conversation(&conversation.id, "  Groceries  ")
+        .await
+        .unwrap();
+    assert_eq!(renamed.title, "Groceries");
+    assert!(
+        rt.rename_conversation(&conversation.id, "   ")
+            .await
+            .is_err(),
+        "empty titles are refused"
+    );
+    let long = rt
+        .rename_conversation(&conversation.id, &"x".repeat(500))
+        .await
+        .unwrap();
+    assert_eq!(long.title.chars().count(), 200);
+
+    rt.delete_conversation(&conversation.id).await.unwrap();
+    assert!(rt.list_conversations().await.unwrap().is_empty());
+    assert!(
+        rt.messages(&conversation.id).await.is_err(),
+        "messages are gone with it"
+    );
+    assert!(rt.delete_conversation(&conversation.id).await.is_err());
+}

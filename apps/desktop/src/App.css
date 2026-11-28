@@ -38,3 +38,156 @@ body {
     transition: none !important;
   }
 }
+
+/* ---------------------------------------------------------------- chat (P5-T03) */
+
+:focus-visible {
+  outline: 2px solid #4c8dff;
+  outline-offset: 2px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+}
+
+.chat {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) 1fr;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.conversations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  padding-right: 0.75rem;
+}
+
+.conversations ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.conversation-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.conversation {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.conversation[aria-current="page"] {
+  background: color-mix(in srgb, #4c8dff 20%, transparent);
+  font-weight: 600;
+}
+
+.icon {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  padding: 0.25rem 0.4rem;
+}
+
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.messages ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.message {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  max-width: 48rem;
+}
+
+.message p {
+  margin: 0.25rem 0 0;
+  white-space: pre-wrap;
+}
+
+.message-user {
+  background: color-mix(in srgb, #4c8dff 12%, transparent);
+}
+
+.message-assistant {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.speaker {
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.marker,
+.tool-activity {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.composer {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  padding-top: 0.5rem;
+}
+
+.composer textarea {
+  flex: 1;
+  font: inherit;
+  resize: vertical;
+}
+
+.composer-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.notice,
+.error,
+.empty {
+  opacity: 0.85;
+}
+
+.error,
+.field-error {
+  color: #d33;
+}
+
+.danger {
+  color: #d33;
+}

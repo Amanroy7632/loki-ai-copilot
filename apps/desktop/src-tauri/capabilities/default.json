@@ -10,6 +10,8 @@
     "allow-stop-reply",
     "allow-respond-approval",
     "allow-list-conversations",
-    "allow-get-messages"
+    "allow-get-messages",
+    "allow-rename-conversation",
+    "allow-delete-conversation"
   ]
 }
