@@ -6,11 +6,14 @@
 import type {
   AllowedRootInfo,
   AppStatus,
+  AuditEntry,
   Conversation,
+  DesktopSettings,
   JsonValue,
   Message,
   PermissionRow,
   Risk,
+  SettingsSnapshot,
   TurnEvent,
 } from "@loki/contracts";
 import type { Channel } from "@tauri-apps/api/core";
@@ -41,6 +44,12 @@ export interface FakeBackendOptions {
 }
 
 export interface FakeBackend {
+  settings: SettingsSnapshot;
+  audit: AuditEntry[];
+  busy: boolean;
+  exportPicked: boolean;
+  dataError: string | null;
+  cleanupError: string | null;
   calls: { cmd: string; args: Record<string, unknown> }[];
   conversations: Conversation[];
   messages: Map<string, Message[]>;
@@ -93,6 +102,17 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
   const stopped = new Set<string>();
 
   const backend: FakeBackend = {
+    settings: {
+      values: { provider: "mock", model_id: null, network_mode: "local_only", history_days: null },
+      memory: { status: "unavailable", reason: "Personal memory is not available yet." },
+      autostart: { status: "unavailable", reason: "Start at login is not available in this build." },
+      wake_word: { status: "unavailable", reason: "Wake-word listening is not available in this build." },
+    },
+    audit: [],
+    busy: false,
+    exportPicked: true,
+    dataError: null,
+    cleanupError: null,
     calls: [],
     conversations: [...(options.conversations ?? [])],
     messages: new Map(Object.entries(options.messages ?? {})),
@@ -206,7 +226,34 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
     backend.calls.push({ cmd, args });
     switch (cmd) {
       case "app_status":
-        return STATUS;
+        return {
+          ...STATUS,
+          provider: backend.settings.values.provider,
+          model: backend.settings.values.model_id,
+        };
+      case "get_settings":
+        return structuredClone(backend.settings);
+      case "save_settings": {
+        if (backend.busy) throw new Error("Loki is busy. Stop the reply and try again.");
+        if (backend.dataError) throw new Error(backend.dataError);
+        backend.settings.values = structuredClone(args.settings as DesktopSettings);
+        if (backend.cleanupError) throw { message: backend.cleanupError, state_changed: true };
+        return structuredClone(backend.settings);
+      }
+      case "clear_history": {
+        if (backend.busy) throw new Error("Loki is busy. Stop the reply and try again.");
+        if (backend.dataError) throw new Error(backend.dataError);
+        const count = backend.conversations.length;
+        backend.conversations = [];
+        backend.messages.clear();
+        if (backend.cleanupError) throw { message: backend.cleanupError, state_changed: true };
+        return count;
+      }
+      case "export_data":
+        if (backend.dataError) throw new Error(backend.dataError);
+        return backend.exportPicked;
+      case "list_audit":
+        return structuredClone(backend.audit);
       case "list_conversations":
         return backend.conversations;
       case "get_messages":

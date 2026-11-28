@@ -5,6 +5,11 @@
 /// Messages never include stored content, only identifiers and SQLite's own error text.
 #[derive(Debug, thiserror::Error)]
 pub enum MemoryError {
+    /// Rows were deleted, but vacuum/checkpoint failed; callers must discard cached history.
+    #[error(
+        "history was deleted, but database cleanup is incomplete: {0}; close other Loki instances and clear again"
+    )]
+    HistoryCleanup(String),
     /// SQLite reported an error.
     #[error("database error: {0}")]
     Sqlite(#[from] rusqlite::Error),

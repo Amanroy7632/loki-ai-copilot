@@ -19,6 +19,11 @@ fn main() {
             "revoke_permission",
             "add_root",
             "remove_root",
+            "get_settings",
+            "save_settings",
+            "clear_history",
+            "list_audit",
+            "export_data",
         ]));
     if let Err(error) = tauri_build::try_build(attributes) {
         panic!("tauri build configuration failed: {error:#}");

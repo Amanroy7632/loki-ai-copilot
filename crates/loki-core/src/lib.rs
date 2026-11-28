@@ -21,6 +21,7 @@ pub mod grant;
 pub mod ids;
 pub mod message;
 pub mod network;
+pub mod settings;
 pub mod task;
 pub mod time;
 pub mod tool;
@@ -32,6 +33,10 @@ pub use grant::{ANY_SCOPE, Grant};
 pub use ids::{ApprovalId, ConversationId, MessageId, RequestId, SessionId, TaskId, ToolName};
 pub use message::{Conversation, Message, Role};
 pub use network::NetworkMode;
+pub use settings::{
+    AuditEntry, DataControlError, DataExport, DesktopSettings, ExportConversation,
+    SettingsProvider, SettingsSnapshot,
+};
 pub use task::TaskState;
 pub use time::UnixMillis;
 pub use tool::{ErrorCode, Risk, ToolRequest, ToolResult, ToolSpec, ToolStatus};

@@ -128,6 +128,40 @@ Agent tool loop (loki-agent, P3-T05)
 `ChatEvent::Error` variant. A `ToolCallDraft` has no request ID or deadline; the agent assigns them
 when it builds a `ToolRequest`. Until P3, the agent counts and logs tool-call proposals and never runs them.
 
+## Settings and data API (P5-T06)
+
+New generated payloads in `loki-core::settings` (existing shapes unchanged):
+
+```text
+SettingsProvider = Mock | Ollama                    serialized snake_case
+DesktopSettings { provider, model_id?, network_mode, history_days? }
+SettingsSnapshot { values: DesktopSettings, memory, autostart, wake_word: CapabilityStatus }
+ExportConversation { conversation: Conversation, messages: Message[] }
+DataExport { version: 1, exported_at, history: ExportConversation[], memory_available, memories }
+AuditEntry { id, tool, status, summary?, created_at }  redacted summary, no raw request/output
+DataControlError { message, state_changed }           save/clear failures; refresh when true
+```
+
+All structs reject unknown fields. The settings command accepts only these four editable values,
+not arbitrary config keys, URLs or paths. Finite retention must be 1–36500 days; Ollama requires a
+nonempty local model tag (maximum 200 bytes, no whitespace/control characters). Cloud tags are
+refused. `SettingsProvider` mirrors the existing config enum without changing its representation.
+
+Desktop commands (each declared in the manifest and capability): `get_settings`, `save_settings`,
+`clear_history`, `list_audit` (latest 100), `export_data` (native save dialog, false on cancellation).
+There are still no JS dialog/filesystem grants. Save/clear refuse immediately when the runtime
+is busy; the user can stop the reply and retry. Export writes only to a **new** file chosen by the
+user. The JSON excludes audit, config and grants. Personal memory is unavailable until P7:
+`memory_available` is false and `memories` is empty, not a claim that memory export works.
+
+Runtime API: `settings`, `update_settings`, `export_data`, `export_data_to`, `clear_history`,
+`audit_entries`. Saving rebuilds provider and policy before switching the live runtime. See
+ADR-0015 for retention timing, exclusive access and partial-failure behavior.
+Save/clear errors carry `DataControlError`; other commands retain their existing string errors.
+If a cleanup failure happens after saving/deleting, `state_changed` is true and the desktop
+discards cached chat and reloads provider status while displaying the error. Busy/validation
+failures set it false, preserving any active conversation.
+
 ## Initial tool registry
 
 | Tool | Arguments | Risk | Capability | Behaviour |

@@ -132,6 +132,29 @@ at a different folder, revokes every grant with that scope (P5-T05, ADR-0014).
 
 ## Data lifecycle
 
+P5-T06 implements `Database::export_data` (one transaction/read snapshot), `clear_history`, and
+`apply_retention`. Export schema v1 includes conversation metadata and every message, including
+stopped replies, and excludes audit/config/grants. The runtime writes JSON directly to a new file
+selected by the desktop native save dialog. It never overwrites an existing file or creates an
+exported temporary copy. JSON exports are unencrypted and remain after clearing history.
+
+Retention deletes conversations whose **last activity** (`updated_at`) is strictly older than
+the configured cutoff. `None` keeps history; the desktop accepts 1–36500 days. Enforcement occurs
+at startup and when settings are saved, not on a background timer. Saving a changed finite
+retention period asks for confirmation because it deletes expired history immediately.
+
+Bulk deletion cascades messages, runs with `secure_delete = ON`, then `VACUUM` and a checked
+`wal_checkpoint(TRUNCATE)`. Audit/approvals/grants remain. A busy WAL reader is reported as an
+incomplete cleanup **after logical deletion**; close the other reader and clear again. A config
+save followed by retention failure still leaves the saved policy active; the UI reports the error
+and reloads effective settings. Successful bulk changes and partial failures marked
+`DataControlError.state_changed` also discard the desktop's cached chat and refresh provider status.
+
+**No personal memory or FTS tables exist yet.** Their export/delete controls report unavailable,
+and the export distinguishes unavailable memory from an empty supported store. P7 must extend
+export, clear/delete and retention to derived indexes; the current data-control test deliberately
+fails if memory/FTS tables appear without updating it. The P5-T06 FTS acceptance remains open.
+
 - History retention is configurable. Raw audio is off. Audit payloads are redacted.
 - **Deletion removes derived data too**: FTS rows, caches and exported temp files. Document the
   limitations, for example OS backups (Time Machine, File History) and WAL checkpoints.

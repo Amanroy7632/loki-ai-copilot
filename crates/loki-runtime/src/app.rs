@@ -35,6 +35,8 @@ use crate::paths::Paths;
 use crate::redact::Redactor;
 use crate::tooling::build_tool_host;
 
+mod settings;
+
 /// One capability as shown by `loki permissions list` and the permissions screen.
 pub use loki_core::PermissionRow;
 
@@ -189,6 +191,7 @@ impl Runtime {
         }
 
         let db = Database::open(&paths.database_file())?;
+        db.apply_retention(config.retention.history_days, UnixMillis::now())?;
         // Startup recovery (P3-T04): unfinished tasks become Interrupted and are never re-run.
         // `open` is blocking by contract, so this runs synchronously before the store exists.
         let interrupted = db.recover_interrupted_tasks(UnixMillis::now())?;

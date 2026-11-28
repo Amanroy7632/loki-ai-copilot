@@ -5,6 +5,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod settings;
 
 use tauri::Manager;
 
@@ -34,6 +35,11 @@ fn main() {
             commands::revoke_permission,
             commands::add_root,
             commands::remove_root,
+            settings::get_settings,
+            settings::save_settings,
+            settings::clear_history,
+            settings::list_audit,
+            settings::export_data,
         ])
         .run(tauri::generate_context!());
     if let Err(error) = app {

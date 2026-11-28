@@ -1,14 +1,18 @@
 // Typed wrappers around Loki's Tauri commands. Types come only from @loki/contracts (generated).
 import type {
   AllowedRootInfo,
+  AuditEntry,
   AppStatus,
   Capability,
   Conversation,
   ConversationId,
+  DataControlError,
+  DesktopSettings,
   Grant,
   JsonValue,
   Message,
   PermissionRow,
+  SettingsSnapshot,
   TurnEvent,
 } from "@loki/contracts";
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -151,4 +155,52 @@ export function addRoot(id: string): Promise<AllowedRootInfo | null> {
 /** Removes the folder and revokes its grants. */
 export function removeRoot(id: string): Promise<boolean> {
   return invoke<boolean>("remove_root", { id });
+}
+
+export function getSettings(): Promise<SettingsSnapshot> {
+  return invoke<SettingsSnapshot>("get_settings");
+}
+
+export function saveSettings(settings: DesktopSettings): Promise<SettingsSnapshot> {
+  return dataMutation<SettingsSnapshot>("save_settings", { settings });
+}
+
+/** Native save dialog; false means cancelled. No path or file content comes from the page. */
+export function exportData(): Promise<boolean> {
+  return invoke<boolean>("export_data");
+}
+
+export function clearHistory(): Promise<number> {
+  return dataMutation<number>("clear_history");
+}
+
+export function listAudit(): Promise<AuditEntry[]> {
+  return invoke<AuditEntry[]>("list_audit");
+}
+
+/** Cleanup may fail after a successful write/delete; the UI must refresh in that case. */
+export class DataControlFailure extends Error {
+  readonly stateChanged: boolean;
+  constructor(failure: DataControlError) {
+    super(failure.message);
+    this.stateChanged = failure.state_changed;
+  }
+}
+
+async function dataMutation<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (failure) {
+    if (
+      typeof failure === "object" &&
+      failure !== null &&
+      "message" in failure &&
+      typeof failure.message === "string" &&
+      "state_changed" in failure &&
+      typeof failure.state_changed === "boolean"
+    ) {
+      throw new DataControlFailure({ message: failure.message, state_changed: failure.state_changed });
+    }
+    throw failure;
+  }
 }

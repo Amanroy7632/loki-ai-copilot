@@ -8,8 +8,8 @@
 
 | | |
 | --- | --- |
-| **Current phase** | P4: Voice ([phase file](phases/P04-voice.md)). Owner authorized parallel P4 development and then integration of P4-T01 into the main checkout after P3 implementation (2026-11-27). Earlier phase gates remain open. |
-| **Next ticket** | **P5-T06 Settings and data control** (P4-T04..T09 still open in parallel). P3 is code complete (238 tests and native smoke test recorded) but still needs SEC tests passing in CI. Open owner items: the P2 offline test, D-05, D-07. |
+| **Current phase** | P5: Desktop ([phase file](phases/P05-desktop-app.md)), with P4 voice work open in parallel. Owner asked to continue from Claude's handoff (2026-11-28). Earlier phase gates remain open. |
+| **Next ticket** | **P5-T07 Tray and background**, including the autostart integration needed by partial P5-T06. P5-T06 memory/FTS acceptance depends on P7; P4-T04..T09 remain open. Earlier CI/manual gates and D-05/D-07 remain unresolved. |
 | **Last gate passed** | none |
 | **Reference OS** | **macOS** (Apple Silicon first), ADR-0003 |
 
@@ -21,8 +21,9 @@
 | P1 Foundation | code complete; **all checks pass locally on macOS**; CI not yet run anywhere. Gate not passed. |
 | P2 Local chat | code complete; all checks pass locally (161 tests); manual chat against real Ollama recorded. Gate not passed (see Next ticket). |
 | P3 Tools and policy | code complete; all checks pass locally (238 tests); native macOS smoke test passed (real model, approved app launch). Gate not passed: SEC tests not yet run in CI. |
-| P4 Voice | P4-T01/T02 implemented: state machine and explicit microphone capture; combined checks pass (259 tests), native macOS capture recorded. Gate not passed. |
-| P5–P11 | not started |
+| P4 Voice | P4-T01..T03 implemented: state machine, explicit microphone capture, VAD and silence timeout (33 voice tests). No STT/TTS integration yet. Gate not passed. |
+| P5 Desktop | P5-T01..T05 implemented; P5-T06 settings/history controls implemented with autostart and memory/FTS dependencies outstanding. Native interaction and phase gate remain open. |
+| P6–P11 | not started |
 
 ## P0 tickets
 
@@ -99,7 +100,8 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 - [x] P5-T03 Chat UI: streaming messages (aria-busy while streaming, `log` region), Stop (button or Escape), Retry, conversation list with New, select, rename (Enter/Escape, focus restored) and delete (inline confirm, focus on Cancel), Up/Down navigation, visible focus. 20 Vitest component tests on a fake backend that streams through real Channels. Runtime + commands for rename/delete. *Interactive manual run pending the owner* (`docs/checklists/p5-chat-manual.md`); the agent verified the app starts.
 - [x] P5-T04 Approval dialog: tool, plain-language risk, every argument (invisible/bidi characters shown as `\u{…}`), countdown; focus on Deny; Escape denies; Tab trapped; auto-repeat ignored; a Sensitive action can only be approved by keyboard after the user moved focus to Approve. `respond_approval` now carries the shown arguments: the broker refuses a "yes" that is expired or doesn't match (delivered as a refusal). Acceptance: `approving_is_bound_to_the_shown_arguments`, `a_large_integer_rounded_by_the_webview_does_not_match`, `an_expired_approval_is_refused_but_a_no_is_always_accepted`, `mock_approval_for_different_shown_arguments_runs_nothing` (Rust) and 13 Vitest tests in `ApprovalDialog.test.tsx`. *Interactive run pending the owner* (`docs/checklists/p5-chat-manual.md`).
 - [x] P5-T05 Permissions screen: every capability with status and reason (unavailable ones can't be allowed), Allow/Revoke, allowed folders added through the native picker opened from Rust (no `dialog:` permission for the webview, ADR-0014), Allow/Revoke reading per folder, Remove with confirmation. Runtime fixes found on the way: root changes now reach the file tools without a restart, and removing or repointing a root revokes its grants. Acceptance: `mock_revoking_a_grant_immediately_denies_the_next_call` (same runtime: Succeeded, revoke, Denied) plus 4 more runtime tests and 9 Vitest tests. *Interactive run pending the owner* (`docs/checklists/p5-chat-manual.md`).
-- [ ] P5-T06..T10: not started.
+- [ ] P5-T06 **partial**: provider/model/network mode/retention settings apply to the live runtime; native-dialog JSON history export (new file only), confirmed clear-history with DB/WAL cleanup, and redacted audit view. Typed generated contracts and 9 new Rust / 9 new component tests, including state refresh after partial cleanup failure. Memory, wake word and autostart are explicitly unavailable. FTS/memory acceptance awaits P7 and autostart awaits P5-T07; native save-dialog checks not run. See ADR-0015 and `docs/handoffs/p5-t06.md`.
+- [ ] P5-T07..T10: not started.
 
 ## Open decisions
 
@@ -116,14 +118,18 @@ phase-order rule. P3 implementation and its recorded validation remain intact.
 
 ## Blockers
 
-- **CI evidence still outstanding**: P1-T01, P1-T03, P1-T09 and P3-T10 need CI results. Git is
-  working with an `origin` remote. P1/P2 are on `main`; P3 and P4-T01 are committed on branch
-  `p3/tools-policy` (not pushed). CI runs once that branch is pushed or merged; until then no CI
-  result exists for this code.
+- **CI evidence still outstanding in these notes**: P1-T01, P1-T03, P1-T09 and P3-T10 need CI
+  results. Local history now includes the P3 merge (`531d39c`) and work continues on `p5/desktop`.
+  Remote CI results were not inspected in this session; the previous "not pushed" note was stale.
+- **P5-T06 later-ticket dependencies**: the current schema has no personal memory or FTS tables;
+  export/delete/FTS verification must be completed when P7 adds them. Autostart is implemented in
+  P5-T07. Do not tick the full acceptance until those integrations and native checks are recorded.
 
 ## Progress log
 
 Newest first. Format: `YYYY-MM-DD | ticket | what changed | commands run → result`.
+
+- 2026-11-28 | P5-T06 (partial) | Continued Claude's P5-T05 handoff. Live model/provider/network/retention settings, new-file JSON export through Rust's native dialog, confirmed history deletion with vacuum/WAL cleanup, audit view and typed partial-failure refresh. No new deps/migrations; P3/P4 intact. ADR-0015 records memory/FTS (P7) and autostart (P5-T07) dependencies. | Full `check.sh` with installed Node 24 → all passed (302 Rust + 54 JS tests); production desktop frontend build passed; ACL has 20 Loki commands and no plugin grants. Native/browser interaction unavailable and not claimed. Unrelated package author edit preserved outside the ticket commit.
 
 - 2026-11-28 | P5-T05 | Permissions screen + 6 thin commands, `PermissionRow`/`AllowedRootInfo` contract types (moved/added in loki-core), tauri-plugin-dialog 2.8.4 (tauri-plugin locked to 2.7.2 for the two-week rule; ADR-0014). Fixed: roots added at runtime didn't reach the file tools until restart; a removed root's grant carried over to a new folder with the same ID. UI bug found by a test: React reused the focused "Remove folder" button as the confirm row's "Remove" (focus on the destructive action); fixed with keys. | `./scripts/check.sh` → all passed (293 Rust + 45 JS tests), `cargo deny` ok, no new exceptions. Mutation: without the tool reload, the runtime-root test fails. `dev.sh --mock --fresh` → app up in 17 s, Vite 200, runtime opened; generated capability grants only Loki's 15 commands. Interactive run not done.
 - 2026-11-28 | P5-T04 | Approval dialog (`apps/desktop/src/approval/`), `respond_approval(approval_id, approved, shown_arguments)` with broker-side binding and expiry checks, fake backend approvals. Contract change to a P5-T02 command (one caller, this app), documented in CONTRACTS.md and SECURITY_MODEL.md. | `./scripts/check.sh` → all passed (287 Rust + 36 JS tests). Mutation checks: making the broker accept every "yes" fails 3 Rust tests; removing the Sensitive keyboard guard or the auto-repeat guard fails their Vitest tests. Interactive run not done (agent can't operate the window).

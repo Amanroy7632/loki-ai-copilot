@@ -13,8 +13,8 @@ use tauri::ipc::Channel;
 
 /// Shared application state: the runtime and the startup note (e.g. "no model selected").
 pub struct AppState {
-    runtime: RwLock<Runtime>,
-    note: Option<String>,
+    pub(crate) runtime: RwLock<Runtime>,
+    pub(crate) note: RwLock<Option<String>>,
 }
 
 impl AppState {
@@ -28,7 +28,7 @@ impl AppState {
         })?;
         Ok(Self {
             runtime: RwLock::new(runtime),
-            note,
+            note: RwLock::new(note),
         })
     }
 }
@@ -37,7 +37,7 @@ impl AppState {
 #[tauri::command]
 pub async fn app_status(state: tauri::State<'_, AppState>) -> Result<AppStatus, String> {
     let runtime = state.runtime.read().await;
-    Ok(runtime.status(state.note.as_deref()).await)
+    Ok(runtime.status(state.note.read().await.as_deref()).await)
 }
 
 /// Wraps an IPC channel as the runtime's event sink. Send errors mean the window went away;

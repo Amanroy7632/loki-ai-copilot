@@ -18,6 +18,11 @@
     "allow-grant-permission",
     "allow-revoke-permission",
     "allow-add-root",
-    "allow-remove-root"
+    "allow-remove-root",
+    "allow-get-settings",
+    "allow-save-settings",
+    "allow-clear-history",
+    "allow-list-audit",
+    "allow-export-data"
   ]
 }

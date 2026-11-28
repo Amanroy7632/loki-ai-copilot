@@ -25,6 +25,7 @@
 
 pub mod audit;
 pub mod conversations;
+pub mod data;
 pub mod db;
 pub mod error;
 pub mod store;

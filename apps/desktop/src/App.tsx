@@ -5,8 +5,9 @@ import { useEffect, useState } from "react";
 import { appStatus } from "./api";
 import { ChatView } from "./chat/ChatView";
 import { PermissionsView } from "./permissions/PermissionsView";
+import { SettingsView } from "./settings/SettingsView";
 
-type Section = "chat" | "permissions";
+type Section = "chat" | "permissions" | "settings";
 
 type Load = { kind: "loading" } | { kind: "ready"; status: AppStatus } | { kind: "error"; message: string };
 
@@ -14,6 +15,17 @@ type Load = { kind: "loading" } | { kind: "ready"; status: AppStatus } | { kind:
 export function App() {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [section, setSection] = useState<Section>("chat");
+  const [chatVersion, setChatVersion] = useState(0);
+
+  const settingsChanged = () => {
+    // Successful changes required exclusive runtime access: no reply is running. Discard
+    // cached conversation text after clear/retention and re-read the provider status.
+    setChatVersion((value) => value + 1);
+    void appStatus().then(
+      (status) => setLoad({ kind: "ready", status }),
+      (error: unknown) => setLoad({ kind: "error", message: String(error) }),
+    );
+  };
 
   useEffect(() => {
     let active = true;
@@ -52,24 +64,29 @@ export function App() {
       {load.kind === "ready" && (
         <>
           <nav className="sections" aria-label="Sections">
-            {(["chat", "permissions"] as const).map((name) => (
+            {(["chat", "permissions", "settings"] as const).map((name) => (
               <button
                 key={name}
                 type="button"
                 aria-current={section === name ? "page" : undefined}
                 onClick={() => setSection(name)}
               >
-                {name === "chat" ? "Chat" : "Permissions"}
+                {name === "chat" ? "Chat" : name === "permissions" ? "Permissions" : "Settings"}
               </button>
             ))}
           </nav>
           {/* Chat stays mounted so a running reply or a pending approval survives switching. */}
           <div className="section" hidden={section !== "chat"}>
-            <ChatView />
+            <ChatView key={chatVersion} />
           </div>
           {section === "permissions" && (
             <div className="section">
               <PermissionsView />
+            </div>
+          )}
+          {section === "settings" && (
+            <div className="section">
+              <SettingsView onChanged={settingsChanged} />
             </div>
           )}
         </>
