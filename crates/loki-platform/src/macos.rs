@@ -141,7 +141,50 @@ impl Platform for MacPlatform {
     fn capabilities(&self) -> BTreeMap<Capability, CapabilityStatus> {
         let mut capabilities = crate::later_phase_statuses();
         capabilities.insert(Capability::AppLaunch, CapabilityStatus::Supported);
+        capabilities.insert(
+            Capability::Microphone,
+            microphone_status(crate::macos_mic::status()),
+        );
         capabilities
+    }
+
+    fn request_permission(&self, capability: Capability) -> CapabilityStatus {
+        if capability == Capability::Microphone {
+            // The user has up to two minutes to answer the macOS prompt.
+            return microphone_status(crate::macos_mic::request(Duration::from_secs(120)));
+        }
+        self.capabilities()
+            .get(&capability)
+            .cloned()
+            .unwrap_or(CapabilityStatus::Unavailable {
+                reason: String::from("not reported by this platform"),
+            })
+    }
+
+    fn open_permission_settings(&self, capability: Capability) -> Result<(), PlatformError> {
+        // Fixed System Settings deep links only; nothing from the model or the UI reaches `open`.
+        let pane = match capability {
+            Capability::Microphone => "Privacy_Microphone",
+            Capability::FileRead => "Privacy_FilesAndFolders",
+            _ => {
+                return Err(PlatformError::Unavailable(format!(
+                    "{} has no macOS privacy setting",
+                    capability.as_str()
+                )));
+            }
+        };
+        let url = format!("x-apple.systempreferences:com.apple.preference.security?{pane}");
+        let status = Command::new("/usr/bin/open")
+            .arg(&url)
+            .status()
+            .map_err(|error| PlatformError::Failed(error.to_string()))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(PlatformError::Failed(format!(
+                "could not open System Settings ({status})"
+            )))
+        }
     }
 
     fn list_apps(&self) -> Result<Vec<AppEntry>, PlatformError> {
@@ -205,6 +248,24 @@ impl Platform for MacPlatform {
 
     fn system_info(&self) -> Result<SystemInfo, PlatformError> {
         crate::system::read_system_info()
+    }
+}
+
+/// The capability status for a macOS microphone permission.
+fn microphone_status(permission: crate::macos_mic::MicPermission) -> CapabilityStatus {
+    use crate::macos_mic::MicPermission;
+    match permission {
+        MicPermission::Granted => CapabilityStatus::Supported,
+        MicPermission::NotAsked => CapabilityStatus::PermissionRequired {
+            reason: String::from(
+                "macOS will ask you to allow microphone access when you turn this on.",
+            ),
+        },
+        MicPermission::Denied => CapabilityStatus::Denied {
+            reason: String::from(
+                "Microphone access is off for Loki in System Settings › Privacy & Security › Microphone.",
+            ),
+        },
     }
 }
 

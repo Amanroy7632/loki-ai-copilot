@@ -8,6 +8,7 @@
 //! microphone with nothing to transcribe would show an unsupported feature as working. Mute
 //! works now: while muted, nothing can start a voice session.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use loki_core::{CapabilityStatus, VoicePhase, VoiceStatus};
@@ -53,6 +54,29 @@ struct Inner {
     machine: Mutex<VoiceMachine>,
     sinks: Mutex<Vec<VoiceSink>>,
     push_to_talk: CapabilityStatus,
+    /// Set while a capture driver owns the microphone: its stop flag.
+    capture: Mutex<Option<Arc<AtomicBool>>>,
+}
+
+/// The microphone is held by a capture driver (the microphone test now, push-to-talk later).
+/// The driver polls [`CaptureLease::should_stop`] and **drops the lease only after it released
+/// the device**; dropping it completes the state machine's cleanup barrier.
+pub struct CaptureLease {
+    voice: VoiceControl,
+    stop: Arc<AtomicBool>,
+}
+
+impl CaptureLease {
+    /// A stop, mute or quit asked the driver to release the microphone.
+    pub fn should_stop(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for CaptureLease {
+    fn drop(&mut self) {
+        self.voice.finish_capture();
+    }
 }
 
 impl std::fmt::Debug for VoiceControl {
@@ -71,6 +95,7 @@ impl VoiceControl {
                 machine: Mutex::new(VoiceMachine::new()),
                 sinks: Mutex::new(Vec::new()),
                 push_to_talk,
+                capture: Mutex::new(None),
             }),
         }
     }
@@ -173,21 +198,83 @@ impl VoiceControl {
             (false, true) => self.apply(&[VoiceEvent::Unmute]),
             (false, false) => Ok(self.status()),
         };
-        // There is no capture driver yet (push-to-talk is unavailable), so nothing can be left
-        // to clean up. The P4 driver must instead send `CleanupComplete` after joining its work.
+        if muted {
+            self.signal_driver();
+        }
         self.finish_cleanup_without_driver();
         result.unwrap_or_else(|_| self.status())
     }
 
-    /// Emergency stop / quit: cancels any voice session.
+    /// Emergency stop / quit: cancels any voice session. A running capture driver is told to
+    /// stop; the session stays "stopping" until it has released the microphone.
     pub fn cancel(&self) -> VoiceStatus {
+        self.signal_driver();
         let _ = self.apply(&[VoiceEvent::Cancel]);
         self.finish_cleanup_without_driver();
         self.status()
     }
 
-    /// With no capture driver there is no work to join, so a pending cleanup is complete.
+    /// Starts a capture session for a driver: the indicator turns on (`Recording`, mic open).
+    /// Refused while muted, or while the microphone is already in use.
+    pub fn begin_capture(&self) -> Result<CaptureLease, RuntimeError> {
+        if self.state().is_muted() {
+            return Err(RuntimeError::InvalidInput(String::from(
+                "Voice is muted. Unmute to use the microphone.",
+            )));
+        }
+        let mut capture = self
+            .inner
+            .capture
+            .lock()
+            .map_err(|_| RuntimeError::InvalidInput(String::from("voice state unavailable")))?;
+        if capture.is_some() {
+            return Err(RuntimeError::InvalidInput(String::from(
+                "The microphone is already in use.",
+            )));
+        }
+        self.apply(&[VoiceEvent::PressTalk])
+            .map_err(|_| RuntimeError::InvalidInput(String::from("Voice is busy. Try again.")))?;
+        let stop = Arc::new(AtomicBool::new(false));
+        *capture = Some(Arc::clone(&stop));
+        Ok(CaptureLease {
+            voice: self.clone(),
+            stop,
+        })
+    }
+
+    /// The driver released the microphone: end the session and complete any cleanup barrier.
+    fn finish_capture(&self) {
+        if let Ok(mut capture) = self.inner.capture.lock() {
+            *capture = None;
+        }
+        if self.state() == VoiceState::Recording {
+            let _ = self.apply(&[VoiceEvent::Cancel]);
+        }
+        self.finish_cleanup_without_driver();
+    }
+
+    fn driver_active(&self) -> bool {
+        self.inner
+            .capture
+            .lock()
+            .map(|capture| capture.is_some())
+            .unwrap_or(true)
+    }
+
+    fn signal_driver(&self) {
+        if let Ok(capture) = self.inner.capture.lock()
+            && let Some(stop) = capture.as_ref()
+        {
+            stop.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// A pending cleanup completes here only when no driver holds the microphone; otherwise the
+    /// driver completes it after releasing the device (see [`CaptureLease`]).
     fn finish_cleanup_without_driver(&self) {
+        if self.driver_active() {
+            return;
+        }
         if matches!(
             self.state(),
             VoiceState::Cancelled

@@ -260,3 +260,21 @@ models, then unreviewed ones by name. `suggested` is the saved model if installe
 in that order. Unreachable: `reachable = false` with how to start Ollama. Desktop command:
 `check_provider`. Settings preselects `suggested` into the form only; nothing is saved until the
 user presses Save.
+
+## OS permissions and the microphone test (ADR-0018)
+
+```text
+Platform::request_permission(capability) -> CapabilityStatus   (shows the OS prompt if never asked; default: current status)
+Platform::open_permission_settings(capability) -> Result<(), PlatformError>   (fixed deep links; default: unavailable)
+MicTestResult { duration_ms, peak, level, heard_sound, stopped_early }
+```
+
+Runtime: `enable_capability(cap)` (asks the OS first when its status is `permission_required`;
+grants `*` only if the OS allows; a refusal returns the row with `denied` and nothing granted;
+`unavailable` is refused), `disable_capability(cap)` (revokes `*`; for the microphone it also ends
+any voice session), `open_permission_settings(cap)`, `test_microphone(seconds, level_sink)` /
+`test_microphone_with(source, ..)` (needs Loki's microphone grant **and** the OS permission). The
+indicator is on throughout, and it stops early on stop, mute, quit or switch-off.
+`VoiceControl::begin_capture() -> CaptureLease`: a driver drops the lease only after releasing the
+device, which completes the cleanup barrier. Desktop commands: `enable_capability`,
+`disable_capability`, `open_permission_settings`, `test_microphone(on_level: Channel<f32>)`.

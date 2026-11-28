@@ -91,3 +91,12 @@ Replies are untrusted. The desktop renders them with a small Markdown subset
 elements: no HTML passthrough, no `dangerouslySetInnerHTML`. Links are shown with their address
 but are never clickable, so a reply can't navigate the webview. Tests: `Markdown.test.tsx`
 (HTML stays text, `javascript:` and other links aren't anchors, unclosed fences are safe).
+
+## OS permissions (ADR-0018)
+
+Loki asks the OS only when the user turns a capability on, and only through the OS's own prompt.
+It never retries around or works around a refusal. Both Loki's switch and the OS permission must
+allow the microphone. Turning Loki's switch off takes effect for the next use and ends any
+running microphone session. Settings pages open through fixed System Settings links. Nothing from
+the model or the page reaches the `open` command. The microphone test keeps no audio and shows
+the listening indicator throughout.

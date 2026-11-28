@@ -12,6 +12,7 @@ import type {
   Grant,
   JsonValue,
   Message,
+  MicTestResult,
   PermissionRow,
   ProviderCheck,
   SettingsSnapshot,
@@ -254,4 +255,31 @@ export function setVoiceMuted(muted: boolean): Promise<VoiceStatus> {
 /** Is Ollama reachable, which local models are installed, and which one to preselect. */
 export function checkProvider(): Promise<ProviderCheck> {
   return invoke<ProviderCheck>("check_provider");
+}
+
+// ------------------------------------------------------------------ OS permissions (P5 redesign)
+
+/**
+ * Turns a capability on. When the OS permission was never asked, macOS shows its own prompt
+ * first; the returned row says what the OS decided (a refusal comes back as `denied`, not granted).
+ */
+export function enableCapability(capability: Capability): Promise<PermissionRow> {
+  return invoke<PermissionRow>("enable_capability", { capability });
+}
+
+/** Turns a capability off for Loki. The OS permission itself is only changed in System Settings. */
+export function disableCapability(capability: Capability): Promise<PermissionRow> {
+  return invoke<PermissionRow>("disable_capability", { capability });
+}
+
+/** Opens the macOS privacy settings page for this capability. */
+export async function openPermissionSettings(capability: Capability): Promise<void> {
+  await invoke("open_permission_settings", { capability });
+}
+
+/** Listens for a few seconds and streams the input level (0..1). Keeps no audio. */
+export function testMicrophone(onLevel: (level: number) => void): Promise<MicTestResult> {
+  const channel = new Channel<number>();
+  channel.onmessage = onLevel;
+  return invoke<MicTestResult>("test_microphone", { onLevel: channel });
 }

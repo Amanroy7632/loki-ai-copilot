@@ -19,6 +19,7 @@ export type { Grant } from "./Grant";
 export type { LocalModel } from "./LocalModel";
 export type { Message } from "./Message";
 export type { MessageId } from "./MessageId";
+export type { MicTestResult } from "./MicTestResult";
 export type { NetworkMode } from "./NetworkMode";
 export type { PermissionRow } from "./PermissionRow";
 export type { ProviderCheck } from "./ProviderCheck";

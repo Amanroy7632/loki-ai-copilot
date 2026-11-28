@@ -134,3 +134,51 @@ export const SparkleIcon = () => (
     <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6" />
   </Svg>
 );
+
+export const FolderIcon = () => (
+  <Svg>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+  </Svg>
+);
+export const AppsIcon = () => (
+  <Svg>
+    <rect x="4" y="4" width="6" height="6" rx="1.5" />
+    <rect x="14" y="4" width="6" height="6" rx="1.5" />
+    <rect x="4" y="14" width="6" height="6" rx="1.5" />
+    <rect x="14" y="14" width="6" height="6" rx="1.5" />
+  </Svg>
+);
+export const ClockIcon = () => (
+  <Svg>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5V12l3 2" />
+  </Svg>
+);
+export const ChipIcon = () => (
+  <Svg>
+    <rect x="7" y="7" width="10" height="10" rx="2" />
+    <path d="M9.5 3v4M14.5 3v4M9.5 17v4M14.5 17v4M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4" />
+  </Svg>
+);
+export const GlobeIcon = () => (
+  <Svg>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M3.5 12h17M12 3.5c2.5 2.6 3.7 5.4 3.7 8.5s-1.2 5.9-3.7 8.5c-2.5-2.6-3.7-5.4-3.7-8.5S9.5 6.1 12 3.5Z" />
+  </Svg>
+);
+export const BellIcon = () => (
+  <Svg>
+    <path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16ZM10 20a2 2 0 0 0 4 0" />
+  </Svg>
+);
+export const TerminalIcon = () => (
+  <Svg>
+    <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+    <path d="m7 9.5 3 2.5-3 2.5M12.5 15h4.5" />
+  </Svg>
+);
+export const ExternalIcon = () => (
+  <Svg>
+    <path d="M14 4h6v6M20 4l-8 8M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+  </Svg>
+);

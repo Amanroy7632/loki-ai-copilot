@@ -35,6 +35,7 @@ use crate::paths::Paths;
 use crate::redact::Redactor;
 use crate::tooling::build_tool_host;
 
+pub mod microphone;
 mod settings;
 
 /// One capability as shown by `loki permissions list` and the permissions screen.

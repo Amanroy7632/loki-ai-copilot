@@ -269,3 +269,68 @@ pub async fn remove_root(state: tauri::State<'_, AppState>, id: String) -> Resul
         .await
         .map_err(|error| error.to_string())
 }
+
+/// Turns a capability on. If the OS permission was never asked, macOS shows its own prompt
+/// first; Loki only grants it if the OS allows it. Returns the updated row.
+#[tauri::command]
+pub async fn enable_capability(
+    state: tauri::State<'_, AppState>,
+    capability: String,
+) -> Result<PermissionRow, String> {
+    state
+        .runtime
+        .read()
+        .await
+        .enable_capability(&capability)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// Turns a capability off for Loki; the next call that needs it is denied.
+#[tauri::command]
+pub async fn disable_capability(
+    state: tauri::State<'_, AppState>,
+    capability: String,
+) -> Result<PermissionRow, String> {
+    state
+        .runtime
+        .read()
+        .await
+        .disable_capability(&capability)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// Opens the OS privacy settings page for a capability (fixed System Settings links).
+#[tauri::command]
+pub async fn open_permission_settings(
+    state: tauri::State<'_, AppState>,
+    capability: String,
+) -> Result<(), String> {
+    state
+        .runtime
+        .read()
+        .await
+        .open_permission_settings(&capability)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// Listens for a few seconds to prove the microphone works, streaming the live level (0..1).
+/// Keeps no audio; the listening indicator is on throughout.
+#[tauri::command]
+pub async fn test_microphone(
+    state: tauri::State<'_, AppState>,
+    on_level: Channel<f32>,
+) -> Result<loki_core::MicTestResult, String> {
+    let sink: loki_runtime::LevelSink = Arc::new(move |level| {
+        let _ = on_level.send(level);
+    });
+    state
+        .runtime
+        .read()
+        .await
+        .test_microphone(4, sink)
+        .await
+        .map_err(|error| error.to_string())
+}

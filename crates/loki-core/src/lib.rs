@@ -43,4 +43,4 @@ pub use settings::{
 pub use task::TaskState;
 pub use time::UnixMillis;
 pub use tool::{ErrorCode, Risk, ToolRequest, ToolResult, ToolSpec, ToolStatus};
-pub use voice::{VoicePhase, VoiceStatus};
+pub use voice::{MicTestResult, VoicePhase, VoiceStatus};

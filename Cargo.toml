@@ -64,6 +64,10 @@ jsonschema = { version = "0.63", default-features = false }
 sha2 = "0.11"
 jiff = "1.0"
 plist = "1.10"
+# macOS microphone permission (TCC) through AVAudioApplication. Already in the lock via cpal; MIT.
+objc2 = "=0.6.5"
+block2 = "=0.6.2"
+objc2-avf-audio = { version = "=0.3.2", default-features = false, features = ["std", "AVAudioApplication", "block2"] }
 # P4-T02: checked on crates.io 2026-11-27. CPAL: Apache-2.0;
 # rubato/crossbeam-queue: MIT OR Apache-2.0. See ADR-0012.
 cpal = "=0.18.2"

@@ -38,6 +38,7 @@ pub mod stream;
 pub mod tooling;
 pub mod voice;
 
+pub use app::microphone::LevelSink;
 pub use app::{PermissionRow, ReplyOutcome, Runtime, RuntimeOptions};
 pub use config::{Config, NetworkMode, ProviderKind};
 pub use error::RuntimeError;

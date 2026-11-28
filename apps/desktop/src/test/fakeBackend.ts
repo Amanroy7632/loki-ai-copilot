@@ -23,7 +23,7 @@ import type { Channel } from "@tauri-apps/api/core";
 import { mockIPC } from "@tauri-apps/api/mocks";
 
 interface TauriInternals {
-  runCallback(id: number, frame: { index: number; message: TurnEvent | VoiceStatus }): void;
+  runCallback(id: number, frame: { index: number; message: TurnEvent | VoiceStatus | number }): void;
 }
 
 function internals(): TauriInternals {
@@ -44,6 +44,8 @@ export interface FakeBackendOptions {
   roots?: AllowedRootInfo[];
   /** What the "native folder picker" returns; `null` = the user cancelled. */
   pickFolder?: string | null;
+  /** What the macOS permission prompt answers when a capability is turned on (default: Allow). */
+  permissionAnswers?: Partial<Record<string, PermissionRow["status"]>>;
   /** What `check_provider` reports (default: Ollama not reachable). */
   providerCheck?: ProviderCheck;
 }
@@ -71,6 +73,9 @@ export interface FakeBackend {
   /** Each approval answer and whether the fake runtime accepted it. */
   answers: { approvalId: string; approved: boolean; shownArguments: JsonValue; accepted: boolean }[];
   permissions: PermissionRow[];
+  /** Capabilities whose OS prompt was shown, and whose settings page was opened. */
+  prompts: string[];
+  openedSettings: string[];
   roots: AllowedRootInfo[];
   pickFolder: string | null;
 }
@@ -86,7 +91,7 @@ export const DEFAULT_PERMISSIONS: PermissionRow[] = [
     capability: "microphone",
     status: {
       status: "permission_required",
-      reason: "Allow Loki in System Settings › Privacy › Microphone.",
+      reason: "macOS will ask you to allow microphone access when you turn this on.",
     },
     scopes: [],
   },
@@ -144,6 +149,8 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
     failWith: options.failWith ?? null,
     answers: [],
     permissions: structuredClone(options.permissions ?? DEFAULT_PERMISSIONS),
+    prompts: [],
+    openedSettings: [],
     roots: structuredClone(options.roots ?? []),
     pickFolder: options.pickFolder ?? null,
   };
@@ -386,6 +393,41 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
         entry?.resolve(approved && accepted);
         backend.answers.push({ approvalId, approved, shownArguments, accepted });
         return accepted;
+      }
+      case "enable_capability": {
+        const capability = args.capability as string;
+        const row = backend.permissions.find((r) => r.capability === capability);
+        if (!row) throw new Error(`unknown capability ''`);
+        if (row.status.status === "unavailable") {
+          throw new Error(` is unavailable here: `);
+        }
+        if (row.status.status === "permission_required") {
+          backend.prompts.push(capability);
+          row.status = options.permissionAnswers?.[capability] ?? { status: "supported" };
+        }
+        if (row.status.status === "supported" && !row.scopes.includes("*")) row.scopes = [...row.scopes, "*"];
+        return structuredClone(row);
+      }
+      case "disable_capability": {
+        const row = backend.permissions.find((r) => r.capability === args.capability);
+        if (!row) throw new Error("unknown capability");
+        row.scopes = row.scopes.filter((s) => s !== "*");
+        return structuredClone(row);
+      }
+      case "open_permission_settings":
+        backend.openedSettings.push(args.capability as string);
+        return null;
+      case "test_microphone": {
+        const mic = backend.permissions.find((r) => r.capability === "microphone");
+        if (!mic?.scopes.includes("*"))
+          throw new Error("The microphone is off in Loki's Permissions. Turn it on first.");
+        const channel = args.onLevel as Channel<number>;
+        let index = 0;
+        for (const level of [0.2, 0.7, 0.4]) {
+          await tick();
+          internals().runCallback(channel.id, { index: index++, message: level });
+        }
+        return { duration_ms: 4000, peak: 0.6, level: 0.1, heard_sound: true, stopped_early: false };
       }
       case "list_permissions":
         return structuredClone(backend.permissions);

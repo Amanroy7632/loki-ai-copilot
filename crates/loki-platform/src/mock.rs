@@ -11,7 +11,11 @@ use crate::{AppEntry, LaunchOutcome, Platform, PlatformError, SystemInfo};
 #[derive(Debug)]
 pub struct MockPlatform {
     apps: Vec<AppEntry>,
-    capabilities: BTreeMap<Capability, CapabilityStatus>,
+    capabilities: Mutex<BTreeMap<Capability, CapabilityStatus>>,
+    /// What the "OS prompt" answers per capability (absent: the status doesn't change).
+    permission_answers: BTreeMap<Capability, CapabilityStatus>,
+    permission_requests: Mutex<Vec<Capability>>,
+    opened_settings: Mutex<Vec<Capability>>,
     launches: Mutex<Vec<String>>,
     verify_launches: bool,
 }
@@ -25,7 +29,10 @@ impl Default for MockPlatform {
                 app_id: String::from("com.example.calculator"),
                 display_name: String::from("Calculator"),
             }],
-            capabilities,
+            capabilities: Mutex::new(capabilities),
+            permission_answers: BTreeMap::new(),
+            permission_requests: Mutex::new(Vec::new()),
+            opened_settings: Mutex::new(Vec::new()),
             launches: Mutex::new(Vec::new()),
             verify_launches: true,
         }
@@ -43,8 +50,38 @@ impl MockPlatform {
     /// Overrides one capability's status.
     #[must_use]
     pub fn with_capability(mut self, capability: Capability, status: CapabilityStatus) -> Self {
-        self.capabilities.insert(capability, status);
+        if let Ok(capabilities) = self.capabilities.get_mut() {
+            capabilities.insert(capability, status);
+        }
         self
+    }
+
+    /// Scripts the answer to the OS permission prompt for `capability` (e.g. the user clicks
+    /// Allow: `Supported`; Don't Allow: `Denied`). After the prompt, the status is that answer.
+    #[must_use]
+    pub fn with_permission_answer(
+        mut self,
+        capability: Capability,
+        answer: CapabilityStatus,
+    ) -> Self {
+        self.permission_answers.insert(capability, answer);
+        self
+    }
+
+    /// Capabilities whose OS prompt was requested, in order.
+    pub fn permission_requests(&self) -> Vec<Capability> {
+        self.permission_requests
+            .lock()
+            .map(|r| r.clone())
+            .unwrap_or_default()
+    }
+
+    /// Capabilities whose OS settings page was opened, in order.
+    pub fn opened_settings(&self) -> Vec<Capability> {
+        self.opened_settings
+            .lock()
+            .map(|r| r.clone())
+            .unwrap_or_default()
     }
 
     /// Makes launches report "not verified" (the OS gave no confirmation).
@@ -66,7 +103,41 @@ impl Platform for MockPlatform {
     }
 
     fn capabilities(&self) -> BTreeMap<Capability, CapabilityStatus> {
-        self.capabilities.clone()
+        self.capabilities
+            .lock()
+            .map(|c| c.clone())
+            .unwrap_or_default()
+    }
+
+    fn request_permission(&self, capability: Capability) -> CapabilityStatus {
+        if let Ok(mut requests) = self.permission_requests.lock() {
+            requests.push(capability);
+        }
+        let Ok(mut capabilities) = self.capabilities.lock() else {
+            return CapabilityStatus::Unavailable {
+                reason: String::from("mock state unavailable"),
+            };
+        };
+        let asked = matches!(
+            capabilities.get(&capability),
+            Some(CapabilityStatus::PermissionRequired { .. })
+        );
+        if asked && let Some(answer) = self.permission_answers.get(&capability) {
+            capabilities.insert(capability, answer.clone());
+        }
+        capabilities
+            .get(&capability)
+            .cloned()
+            .unwrap_or(CapabilityStatus::Unavailable {
+                reason: String::from("not reported by this platform"),
+            })
+    }
+
+    fn open_permission_settings(&self, capability: Capability) -> Result<(), PlatformError> {
+        if let Ok(mut opened) = self.opened_settings.lock() {
+            opened.push(capability);
+        }
+        Ok(())
     }
 
     fn list_apps(&self) -> Result<Vec<AppEntry>, PlatformError> {
