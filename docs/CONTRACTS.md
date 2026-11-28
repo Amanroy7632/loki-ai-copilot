@@ -104,8 +104,20 @@ Streaming runtime API (loki-runtime, P5-T02; used by the Tauri commands)
     and returns false. A "no" is always accepted. Single use; the tool call waits at most until
     the approval expires; the store's single-use check still runs after a "yes".
   Desktop commands: send_message, retry_reply, stop_reply, respond_approval, list_conversations,
-  get_messages, rename_conversation, delete_conversation, app_status (each declared in build.rs
-  and granted in capabilities/default.json).
+  get_messages, rename_conversation, delete_conversation, app_status, and (P5-T05)
+  list_permissions, list_roots, grant_permission, revoke_permission, add_root, remove_root (each
+  declared in build.rs and granted in capabilities/default.json; no plugin permissions).
+
+Permissions API (loki-runtime, P5-T05; contract types PermissionRow, AllowedRootInfo in loki-core)
+  permissions() -> [PermissionRow { capability, status, scopes }]   (every capability, always)
+  roots() -> [AllowedRootInfo { id, path }]
+  grant(capability, scope) / revoke(capability, scope)   scope = "*" or an allowed-root ID;
+    granting an Unavailable capability is refused; grants are read on every tool call, so a
+    revoke denies the very next call
+  validate_root_id(id); add_root(id, path) (async) -> AllowedRootInfo; remove_root(id) (async)
+    -> bool. Removing a root or repointing its ID revokes its grants; both rebuild the tool host.
+  Desktop add_root(id) opens the native folder picker from Rust; the page never sends a path
+    (ADR-0014). Returns null when the user cancels.
 
 Agent tool loop (loki-agent, P3-T05)
   validate -> policy -> approval (ToolUi, default no) -> execute -> audit; results go back wrapped as
@@ -115,6 +127,64 @@ Agent tool loop (loki-agent, P3-T05)
 **P1-T04 decision (ADR-0006):** errors travel only as `Err(LlmError)` stream items; there is no
 `ChatEvent::Error` variant. A `ToolCallDraft` has no request ID or deadline; the agent assigns them
 when it builds a `ToolRequest`. Until P3, the agent counts and logs tool-call proposals and never runs them.
+
+## Settings and data API (P5-T06)
+
+New generated payloads in `loki-core::settings` (existing shapes unchanged):
+
+```text
+SettingsProvider = Mock | Ollama                    serialized snake_case
+DesktopSettings { provider, model_id?, network_mode, history_days? }
+SettingsSnapshot { values: DesktopSettings, memory, wake_word: CapabilityStatus }
+                                                    values are the SAVED settings, never a per-run
+                                                    override; autostart moved to AutostartStatus
+ExportConversation { conversation: Conversation, messages: Message[] }
+DataExport { version: 1, exported_at, history: ExportConversation[], memory_available, memories }
+AuditEntry { id, tool, status, summary?, created_at }  redacted summary, no raw request/output
+DataControlError { message, state_changed }           save/clear failures; refresh when true
+```
+
+All structs reject unknown fields. The settings command accepts only these four editable values,
+not arbitrary config keys, URLs or paths. Finite retention must be 1–36500 days; Ollama requires a
+nonempty local model tag (maximum 200 bytes, no whitespace/control characters). Cloud tags are
+refused. `SettingsProvider` mirrors the existing config enum without changing its representation.
+
+Desktop commands (each declared in the manifest and capability): `get_settings`, `save_settings`,
+`clear_history`, `list_audit` (latest 100), `export_data` (native save dialog, false on cancellation).
+There are still no JS dialog/filesystem grants. Save/clear refuse immediately when the runtime
+is busy; the user can stop the reply and retry. Export writes only to a **new** file chosen by the
+user. The JSON excludes audit, config and grants. Personal memory is unavailable until P7:
+`memory_available` is false and `memories` is empty, not a claim that memory export works.
+
+Runtime API: `settings`, `update_settings`, `export_data`, `export_data_to`, `clear_history`,
+`audit_entries`. Saving rebuilds provider and policy before switching the live runtime. See
+ADR-0015 for retention timing, exclusive access and partial-failure behavior.
+Save/clear errors carry `DataControlError`; other commands retain their existing string errors.
+If a cleanup failure happens after saving/deleting, `state_changed` is true and the desktop
+discards cached chat and reloads provider status while displaying the error. Busy/validation
+failures set it false, preserving any active conversation.
+
+Provider changes (fix, 2026-11-28): `settings().values` shows the saved provider and model, not
+this run's override (`LOKI_PROVIDER`, `--provider`, or the labelled mock before onboarding).
+`update_settings` switches the active provider only when provider or model changed, so saving
+an unrelated setting never persists an override. A retention failure at startup is a startup
+warning (retried on the next start or save), never a failed start.
+
+## Desktop lifecycle API (P5-T07)
+
+```text
+AutostartStatus { enabled: bool?, availability: CapabilityStatus }   enabled null = unknown, never "off"
+```
+
+Desktop commands: `get_autostart`, `set_autostart(enabled)` (returns the state the OS reports
+afterwards; an OS that didn't apply the change is an error). Unavailable in development builds
+and with `LOKI_DATA_DIR` / `LOKI_PROVIDER` overrides, so a dev run never registers a login item.
+Runtime: `Runtime::lifecycle_control() -> LifecycleControl` (usable while a turn holds the
+runtime lock): `emergency_stop()` cancels running turns and pending approvals but allows new
+turns; `begin_shutdown()` also refuses new turns; `wait_for_idle(budget) -> bool`.
+`autostart::AutostartService` wraps an `AutostartBackend` (OS adapter; tests use `MockAutostart`).
+The tray menu (show/hide, emergency stop, quit; mute disabled until voice ships), close-to-hide,
+the single-instance lock and quit-drains-work (2 s budget) are desktop-shell wiring.
 
 ## Initial tool registry
 
@@ -151,3 +221,27 @@ when it builds a `ToolRequest`. Until P3, the agent counts and logs tool-call pr
 4. Add security tests if it touches files, network or other devices (see SECURITY_MODEL).
 5. Add a row to the registry table above.
 6. If the tool is `LocalChange` or `Sensitive`, make sure the approval preview shows every argument.
+
+## Voice API (P5-T08)
+
+```text
+VoicePhase = idle | listening | recording | transcribing | thinking | speaking | stopping | muted
+VoiceStatus { phase, mic_open, muted, push_to_talk: CapabilityStatus }
+```
+
+`loki-runtime::voice::VoiceControl` (from `Runtime::voice()`, usable while a turn holds the
+runtime lock) owns the `loki-voice` state machine: `status`, `subscribe(sink)` (receives the
+current status, then every change; a sink returning false is dropped), `press_talk`,
+`release_talk`, `set_muted`, `cancel`. `status_for(state, ..)` is the pure mapping;
+`mic_open = VoiceState::requires_capture()`, so the indicator can't drift from the state machine.
+`fixtures/voice-states.json` holds the table for every state (`VoiceState::ALL`) and is checked
+by a Rust test and read by the desktop's Vitest test.
+
+Push-to-talk reports `Unavailable` until local speech-to-text exists (P4-T04): pressing it is
+refused with the reason and the microphone stays off. Mute works: while muted nothing can start
+capture, and unmuting never starts it. Emergency stop and quit (`LifecycleControl`) also cancel
+voice; a stop never unmutes.
+
+Desktop commands: `get_voice_status`, `watch_voice(on_status: Channel<VoiceStatus>)`,
+`press_talk`, `release_talk`, `set_voice_muted(muted)`. The tray's Mute item and tooltip follow
+the same status stream.

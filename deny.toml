@@ -42,6 +42,10 @@ exceptions = [
   { allow = ["MPL-2.0"], crate = "cssparser-macros" },
   { allow = ["MPL-2.0"], crate = "selectors" },
   { allow = ["MPL-2.0"], crate = "dtoa-short" },
+  # Pulled in by Tauri's `tray-icon` feature (P5-T07) -> libappindicator -> libloading, Linux
+  # only (the tray backend). ISC is permissive and equivalent to MIT. PENDING OWNER CONFIRMATION:
+  # D-07. Rejecting it means no tray icon on Linux.
+  { allow = ["ISC"], crate = "libloading" },
 ]
 
 [licenses.private]

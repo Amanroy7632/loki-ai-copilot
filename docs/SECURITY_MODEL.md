@@ -61,6 +61,19 @@ mode. A test asserts that no other crate constructs its own client.
 
 ## Privacy defaults
 
+Desktop data controls (P5-T06) expose only four typed editable settings and redacted audit rows.
+Export destinations come from a Rust-side native save dialog; neither paths nor JSON bytes are
+accepted from the webview, and it has no dialog/filesystem plugin grants. Exports create new
+files only. History clear and changed finite retention require visible confirmation with default
+Cancel. They require exclusive runtime access; during a turn they fail immediately, leaving
+Stop and approval commands usable. New contract types reject unknown fields; runtime tests cover
+invalid/cloud model settings, export overwrite refusal and post-write retention errors.
+
+Bulk deletion clears the active history database and WAL (with errors for incomplete cleanup),
+and tells the UI to discard cached text even when cleanup fails after the logical deletion.
+Audit/permissions and external exports/backups remain. Personal memory/FTS cleanup is not claimed
+until P7 implements those tables (ADR-0015).
+
 | Setting | Default |
 | --- | --- |
 | Raw audio retention | **Off** |

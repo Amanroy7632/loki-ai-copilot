@@ -7,5 +7,6 @@ Test data shared across crates:
 - `files/`: fake documents for file-tool tests (P3-T08)
 - `web/`: prompt-injection pages (P7-T06)
 - `audio/`: synthetic or consented recordings (P4). The P4-T03 VAD signals are generated in Rust inside `crates/loki-voice/tests/vad.rs` (no binary files, no Python); `*.wav` is git-ignored, so recordings would need an explicit `.gitignore` exception
+- `voice-states.json`: every voice state machine state with the status the UI receives (P5-T08); generated and checked by `cargo test -p loki-runtime --test voice` (regenerate with `LOKI_UPDATE_FIXTURES=1`), read by the desktop indicator test
 
 **Never** put real personal data, secrets or copyrighted model weights here.

@@ -3,15 +3,20 @@
 
 use std::sync::Arc;
 
-use loki_core::{AppStatus, Conversation, ConversationId, Message, TurnEvent};
+use loki_core::{
+    AllowedRootInfo, AppStatus, Conversation, ConversationId, Grant, Message, PermissionRow,
+    TurnEvent,
+};
 use loki_runtime::{EventSink, Runtime, RuntimeOptions};
 use tauri::async_runtime::RwLock;
 use tauri::ipc::Channel;
 
 /// Shared application state: the runtime and the startup note (e.g. "no model selected").
 pub struct AppState {
-    runtime: RwLock<Runtime>,
-    note: Option<String>,
+    pub(crate) control: loki_runtime::LifecycleControl,
+    pub(crate) voice: loki_runtime::voice::VoiceControl,
+    pub(crate) runtime: RwLock<Runtime>,
+    pub(crate) note: RwLock<Option<String>>,
 }
 
 impl AppState {
@@ -24,8 +29,10 @@ impl AppState {
             ..RuntimeOptions::default()
         })?;
         Ok(Self {
+            control: runtime.lifecycle_control(),
+            voice: runtime.voice(),
             runtime: RwLock::new(runtime),
-            note,
+            note: RwLock::new(note),
         })
     }
 }
@@ -34,7 +41,7 @@ impl AppState {
 #[tauri::command]
 pub async fn app_status(state: tauri::State<'_, AppState>) -> Result<AppStatus, String> {
     let runtime = state.runtime.read().await;
-    Ok(runtime.status(state.note.as_deref()).await)
+    Ok(runtime.status(state.note.read().await.as_deref()).await)
 }
 
 /// Wraps an IPC channel as the runtime's event sink. Send errors mean the window went away;
@@ -157,6 +164,108 @@ pub async fn delete_conversation(
         .read()
         .await
         .delete_conversation(&conversation_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+// ------------------------------------------------------------------ permissions (P5-T05)
+
+/// Every capability with its platform status, reason and granted scopes.
+#[tauri::command]
+pub async fn list_permissions(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<PermissionRow>, String> {
+    state
+        .runtime
+        .read()
+        .await
+        .permissions()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// The allowed folders (ID and path).
+#[tauri::command]
+pub async fn list_roots(state: tauri::State<'_, AppState>) -> Result<Vec<AllowedRootInfo>, String> {
+    Ok(state.runtime.read().await.roots())
+}
+
+/// Grants a capability (`*`, or an allowed-root ID for `file_read`). Unavailable capabilities
+/// are refused by the runtime.
+#[tauri::command]
+pub async fn grant_permission(
+    state: tauri::State<'_, AppState>,
+    capability: String,
+    scope: String,
+) -> Result<Grant, String> {
+    state
+        .runtime
+        .read()
+        .await
+        .grant(&capability, &scope)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// Revokes a grant; the next tool call is denied. Returns how many grants were revoked.
+#[tauri::command]
+pub async fn revoke_permission(
+    state: tauri::State<'_, AppState>,
+    capability: String,
+    scope: String,
+) -> Result<usize, String> {
+    state
+        .runtime
+        .read()
+        .await
+        .revoke(&capability, &scope)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// Opens the native folder picker and adds the chosen folder as allowed root `id`. Returns
+/// `None` if the user cancelled.
+///
+/// The path comes only from the OS dialog, never from the webview, so the page can't add a
+/// folder the user didn't pick. The webview gets no `dialog:` permission; only this command
+/// opens the dialog.
+#[tauri::command]
+pub async fn add_root(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<Option<AllowedRootInfo>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    Runtime::validate_root_id(&id).map_err(|error| error.to_string())?;
+    let picker = app.dialog().file().set_title(format!(
+        "Choose the folder Loki may read as \u{201c}{id}\u{201d}"
+    ));
+    let picked = tauri::async_runtime::spawn_blocking(move || picker.blocking_pick_folder())
+        .await
+        .map_err(|error| error.to_string())?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let path = picked.into_path().map_err(|error| error.to_string())?;
+    state
+        .runtime
+        .write()
+        .await
+        .add_root(&id, &path)
+        .await
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
+/// Removes an allowed folder and revokes its grants.
+#[tauri::command]
+pub async fn remove_root(state: tauri::State<'_, AppState>, id: String) -> Result<bool, String> {
+    state
+        .runtime
+        .write()
+        .await
+        .remove_root(&id)
         .await
         .map_err(|error| error.to_string())
 }

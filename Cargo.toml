@@ -73,8 +73,14 @@ crossbeam-queue = "=0.3.14"
 earshot = "=1.2.2"
 # P5: Tauri 2 stable (3.x is alpha). Exact pins: each release is at least two weeks old (2026-11-28);
 # MIT OR Apache-2.0. The JS packages are pinned to the same 2.12 line in apps/desktop/package.json.
-tauri = { version = "=2.12.5", features = [] }
+tauri = { version = "=2.12.5", features = ["tray-icon"] }
 tauri-build = { version = "=2.7.4", features = [] }
+# P5-T05: native folder picker for allowed roots, called from Rust only (no dialog permission
+# is granted to the webview).
+tauri-plugin-dialog = { version = "=2.8.4" }
+# P5-T07: stable 2.x, MIT OR Apache-2.0; published October 2026.
+tauri-plugin-single-instance = "=2.5.5"
+tauri-plugin-autostart = "=2.7.0"
 
 [workspace.lints.rust]
 unsafe_code = "deny"          # FFI modules opt out locally, with a `// SAFETY:` comment per block

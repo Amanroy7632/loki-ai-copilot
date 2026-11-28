@@ -1,5 +1,22 @@
 // Typed wrappers around Loki's Tauri commands. Types come only from @loki/contracts (generated).
-import type { AppStatus, Conversation, ConversationId, JsonValue, Message, TurnEvent } from "@loki/contracts";
+import type {
+  AllowedRootInfo,
+  AutostartStatus,
+  AuditEntry,
+  AppStatus,
+  Capability,
+  Conversation,
+  ConversationId,
+  DataControlError,
+  DesktopSettings,
+  Grant,
+  JsonValue,
+  Message,
+  PermissionRow,
+  SettingsSnapshot,
+  TurnEvent,
+  VoiceStatus,
+} from "@loki/contracts";
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 export function appStatus(): Promise<AppStatus> {
@@ -110,4 +127,125 @@ export function streamTurn(
       },
     );
   });
+}
+
+// ------------------------------------------------------------------ permissions (P5-T05)
+
+export function listPermissions(): Promise<PermissionRow[]> {
+  return invoke<PermissionRow[]>("list_permissions");
+}
+
+export function listRoots(): Promise<AllowedRootInfo[]> {
+  return invoke<AllowedRootInfo[]>("list_roots");
+}
+
+/** `scope` is `*`, or an allowed-root ID for `file_read`. */
+export function grantPermission(capability: Capability, scope: string): Promise<Grant> {
+  return invoke<Grant>("grant_permission", { capability, scope });
+}
+
+/** Takes effect for the very next tool call. Resolves to how many grants were revoked. */
+export function revokePermission(capability: Capability, scope: string): Promise<number> {
+  return invoke<number>("revoke_permission", { capability, scope });
+}
+
+/** Opens the native folder picker; `null` when the user cancels. The path never comes from the page. */
+export function addRoot(id: string): Promise<AllowedRootInfo | null> {
+  return invoke<AllowedRootInfo | null>("add_root", { id });
+}
+
+/** Removes the folder and revokes its grants. */
+export function removeRoot(id: string): Promise<boolean> {
+  return invoke<boolean>("remove_root", { id });
+}
+
+export function getSettings(): Promise<SettingsSnapshot> {
+  return invoke<SettingsSnapshot>("get_settings");
+}
+
+export function saveSettings(settings: DesktopSettings): Promise<SettingsSnapshot> {
+  return dataMutation<SettingsSnapshot>("save_settings", { settings });
+}
+
+/** Native save dialog; false means cancelled. No path or file content comes from the page. */
+export function exportData(): Promise<boolean> {
+  return invoke<boolean>("export_data");
+}
+
+export function clearHistory(): Promise<number> {
+  return dataMutation<number>("clear_history");
+}
+
+export function listAudit(): Promise<AuditEntry[]> {
+  return invoke<AuditEntry[]>("list_audit");
+}
+
+/** Cleanup may fail after a successful write/delete; the UI must refresh in that case. */
+export class DataControlFailure extends Error {
+  readonly stateChanged: boolean;
+  constructor(failure: DataControlError) {
+    super(failure.message);
+    this.stateChanged = failure.state_changed;
+  }
+}
+
+async function dataMutation<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (failure) {
+    if (
+      typeof failure === "object" &&
+      failure !== null &&
+      "message" in failure &&
+      typeof failure.message === "string" &&
+      "state_changed" in failure &&
+      typeof failure.state_changed === "boolean"
+    ) {
+      throw new DataControlFailure({ message: failure.message, state_changed: failure.state_changed });
+    }
+    throw failure;
+  }
+}
+
+// ------------------------------------------------------------------ start at login (P5-T07)
+
+/** The OS's actual registration; `enabled` is null when it can't be read (never shown as off). */
+export function getAutostart(): Promise<AutostartStatus> {
+  return invoke<AutostartStatus>("get_autostart");
+}
+
+/** Turns start at login on or off; resolves to the state the OS reports afterwards. */
+export function setAutostart(enabled: boolean): Promise<AutostartStatus> {
+  return invoke<AutostartStatus>("set_autostart", { enabled });
+}
+
+// ------------------------------------------------------------------ voice (P5-T08)
+
+/** Current voice state: phase, whether the microphone may be open, mute, push-to-talk availability. */
+export function getVoiceStatus(): Promise<VoiceStatus> {
+  return invoke<VoiceStatus>("get_voice_status");
+}
+
+/**
+ * Follows every voice change (including tray mute) until the window closes. Resolves to the
+ * current status; `onStatus` also receives it first.
+ */
+export function watchVoice(onStatus: (status: VoiceStatus) => void): Promise<VoiceStatus> {
+  const channel = new Channel<VoiceStatus>();
+  channel.onmessage = onStatus;
+  return invoke<VoiceStatus>("watch_voice", { onStatus: channel });
+}
+
+/** Rejects with the reason while muted or while push-to-talk is unavailable. */
+export function pressTalk(): Promise<VoiceStatus> {
+  return invoke<VoiceStatus>("press_talk");
+}
+
+export function releaseTalk(): Promise<VoiceStatus> {
+  return invoke<VoiceStatus>("release_talk");
+}
+
+/** Muting always succeeds and turns the microphone off at once. */
+export function setVoiceMuted(muted: boolean): Promise<VoiceStatus> {
+  return invoke<VoiceStatus>("set_voice_muted", { muted });
 }

@@ -35,3 +35,20 @@ then `./scripts/dev.sh --model bonsai-2:4b`. Ask "Open the Calculator app."
 
 Not yet run interactively (the agent can't operate the window). Covered by Vitest component tests
 and Rust broker tests; see the P5-T04 handoff.
+
+# P5-T05 permissions screen: manual run
+
+Run `./scripts/dev.sh --fresh --model bonsai-2:4b` and open **Permissions**.
+
+- [ ] Every capability is listed; Internet, Notifications and Developer tools say why they're unavailable, and Allow is disabled.
+- [ ] Allow Clock; in Chat ask "What time is it in Tokyo?": it answers. Revoke Clock; ask again: the tool is denied (`time.now: denied`).
+- [ ] Type `docs`, Choose folder…: the native macOS folder dialog opens; pick a folder; it appears with its path.
+- [ ] Cancel the dialog once: "No folder was chosen.", nothing added.
+- [ ] Allow reading `docs`; in Chat ask to find a file there: it works without restarting the app.
+- [ ] Remove `docs` (confirm, focus starts on Cancel): reading is revoked; re-adding `docs` starts as "Reading not allowed".
+- [ ] `loki permissions list` (same data dir) matches the screen.
+
+## Last run
+
+Not yet run interactively (the agent can't operate the window). The agent verified the app starts
+with the dialog plugin and that the generated capability grants only Loki's own commands.

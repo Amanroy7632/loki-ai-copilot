@@ -263,3 +263,177 @@ body {
   color: #d33;
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------- sections + permissions (P5-T05) */
+
+.sections {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.sections button[aria-current="page"] {
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.section > .chat {
+  flex: 1;
+}
+
+.permissions {
+  overflow: auto;
+  max-width: 48rem;
+}
+
+.capabilities,
+.roots ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.capability,
+.root {
+  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.capability-unavailable {
+  opacity: 0.7;
+}
+
+.capability-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.capability h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.capability p {
+  margin: 0.25rem 0;
+}
+
+.capability-status {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.capability-reason {
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.capability-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.granted {
+  font-weight: 600;
+}
+
+.root-path {
+  overflow-wrap: anywhere;
+}
+
+.add-root {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.add-root label {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  overflow: auto;
+}
+.settings fieldset {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+}
+.settings fieldset label {
+  display: grid;
+  gap: 0.3rem;
+}
+.settings input:not([type="checkbox"]),
+.settings select {
+  font: inherit;
+  padding: 0.5rem;
+  max-width: 100%;
+}
+.settings-actions,
+.data-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.data-confirm {
+  border: 1px solid currentColor;
+  padding: 1rem;
+  margin-block: 1rem;
+}
+.data-confirm p {
+  flex-basis: 100%;
+}
+
+/* ---------------------------------------------------------------- voice (P5-T08) */
+
+.voice-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* The listening indicator must be impossible to miss: solid colour, bold, never faded. */
+.mic-indicator {
+  background: #c62828;
+  color: #fff;
+  font-weight: 700;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.voice-phase {
+  font-size: 0.9rem;
+}
+
+.voice-hint,
+.voice-message {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  max-width: 28rem;
+}
+
+.voice-bar button[aria-pressed="true"] {
+  font-weight: 600;
+}

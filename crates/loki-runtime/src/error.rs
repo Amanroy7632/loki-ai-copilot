@@ -8,6 +8,9 @@ use loki_memory::MemoryError;
 /// Why a runtime operation failed.
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
+    /// Settings were saved and applied but retention failed. UI state must be refreshed.
+    #[error("settings were saved, but history retention failed: {0}")]
+    SettingsApplied(String),
     /// A filesystem operation failed.
     #[error("could not {action} {}: {source}", path.display())]
     Io {
@@ -80,4 +83,18 @@ pub enum RuntimeError {
         "'{0}' is not in the reviewed model list (fixtures/models.json); see `loki models recommend`"
     )]
     ModelNotAllowlisted(String),
+}
+
+impl RuntimeError {
+    /// Preserves partial-mutation information across IPC, so failures never leave stale chat
+    /// or provider state visible after deletion or a successful configuration write.
+    pub fn data_control_error(&self) -> loki_core::DataControlError {
+        loki_core::DataControlError {
+            message: self.to_string(),
+            state_changed: matches!(
+                self,
+                Self::SettingsApplied(_) | Self::Memory(MemoryError::HistoryCleanup(_))
+            ),
+        }
+    }
 }

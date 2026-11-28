@@ -107,7 +107,7 @@ async fn env_with_logging(
     };
     {
         let mut setup = open(None, false);
-        setup.add_root("docs", docs.path()).unwrap();
+        setup.add_root("docs", docs.path()).await.unwrap();
     }
     let runtime = open(Some(scripts), logging);
     for (capability, scope) in grants {

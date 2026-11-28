@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::capability::{Capability, CapabilityStatus};
 use crate::ids::{ApprovalId, RequestId, ToolName};
 use crate::message::{Conversation, Message};
 use crate::time::UnixMillis;
@@ -26,6 +27,31 @@ pub struct AppStatus {
     pub detail: Option<String>,
     /// Whether tools are offered to the model.
     pub tools_enabled: bool,
+}
+
+/// One capability as the permissions screen and `loki permissions list` show it (P5-T05).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(deny_unknown_fields)]
+pub struct PermissionRow {
+    /// The capability.
+    pub capability: Capability,
+    /// What the platform reports right now, with the reason when it isn't supported.
+    pub status: CapabilityStatus,
+    /// Granted scopes: `*`, or allowed-root IDs for `file_read`. Empty = not granted.
+    pub scopes: Vec<String>,
+}
+
+/// A folder the file tools may use (P5-T05). The model only ever sees the `id`; the path is
+/// shown to the user so they know what they granted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(deny_unknown_fields)]
+pub struct AllowedRootInfo {
+    /// Short ID used in grants and by the model, e.g. `docs`.
+    pub id: String,
+    /// The canonical folder path, for display.
+    pub path: String,
 }
 
 /// An approval request as the UI shows it: the tool, its risk, **every** argument and the expiry.
@@ -158,5 +184,39 @@ mod tests {
         let mut extra = json;
         extra["admin"] = serde_json::json!(true);
         assert!(serde_json::from_value::<AppStatus>(extra).is_err());
+    }
+
+    #[test]
+    fn permission_rows_and_roots_round_trip_and_reject_unknown_fields() {
+        let row = PermissionRow {
+            capability: Capability::FileRead,
+            status: CapabilityStatus::PermissionRequired {
+                reason: "grant Full Disk Access".into(),
+            },
+            scopes: vec!["docs".into()],
+        };
+        let json = serde_json::to_value(&row).unwrap();
+        assert_eq!(json["capability"], "file_read");
+        assert_eq!(json["status"]["status"], "permission_required");
+        assert_eq!(
+            serde_json::from_value::<PermissionRow>(json.clone()).unwrap(),
+            row
+        );
+        let mut extra = json;
+        extra["granted"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<PermissionRow>(extra).is_err());
+
+        let root = AllowedRootInfo {
+            id: "docs".into(),
+            path: "/Users/me/Documents".into(),
+        };
+        let json = serde_json::to_value(&root).unwrap();
+        assert_eq!(
+            serde_json::from_value::<AllowedRootInfo>(json.clone()).unwrap(),
+            root
+        );
+        let mut extra = json;
+        extra["scope"] = serde_json::json!("*");
+        assert!(serde_json::from_value::<AllowedRootInfo>(extra).is_err());
     }
 }

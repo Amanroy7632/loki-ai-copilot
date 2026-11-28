@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-release-talk"
+description = "Enables the release_talk command without any pre-configured scope."
+commands.allow = ["release_talk"]
+
+[[permission]]
+identifier = "deny-release-talk"
+description = "Denies the release_talk command without any pre-configured scope."
+commands.deny = ["release_talk"]

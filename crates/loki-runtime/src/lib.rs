@@ -24,9 +24,11 @@
 //! `loki-core`, `loki-llm`, `loki-tools`, `loki-policy`, `loki-memory`, `loki-voice`, `loki-platform`, `loki-agent`. Adding another edge needs an ADR (see `docs/ARCHITECTURE.md`).
 
 pub mod app;
+pub mod autostart;
 pub mod config;
 pub mod error;
 pub mod ids;
+pub mod lifecycle;
 pub mod logging;
 pub mod models;
 pub mod net;
@@ -34,10 +36,12 @@ pub mod paths;
 pub mod redact;
 pub mod stream;
 pub mod tooling;
+pub mod voice;
 
 pub use app::{PermissionRow, ReplyOutcome, Runtime, RuntimeOptions};
 pub use config::{Config, NetworkMode, ProviderKind};
 pub use error::RuntimeError;
+pub use lifecycle::LifecycleControl;
 pub use loki_agent::{DenyAllApprovals, ToolEvent, ToolUi};
 pub use loki_llm::CancellationToken;
 pub use loki_llm::{MockScript, ProviderHealth, PullProgress};
